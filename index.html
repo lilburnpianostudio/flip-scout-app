@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#14532d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Flip Scout</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+</head>
+<body>
+
+<!-- First-run / sign-in -->
+<section id="view-signin" class="view" hidden>
+  <div class="signin-wrap">
+    <h1 class="logo">Flip Scout</h1>
+    <p class="tagline">buy smart, sell easy, keep score</p>
+
+    <div class="card">
+      <h2>One-time setup</h2>
+      <p class="hint">Flip Scout stores everything in your own private GitHub repo. Paste a fine-grained token that can read and write that one repo. Nothing is sent anywhere else.</p>
+
+      <label class="field">
+        <span>GitHub username</span>
+        <input type="text" id="inOwner" autocapitalize="none" autocorrect="off" placeholder="your-github-username">
+      </label>
+      <label class="field">
+        <span>Data repo name</span>
+        <input type="text" id="inRepo" autocapitalize="none" autocorrect="off" value="flip-scout">
+      </label>
+      <label class="field">
+        <span>Fine-grained token</span>
+        <div class="paste-row">
+          <input type="password" id="inToken" autocapitalize="none" autocorrect="off" placeholder="github_pat_…">
+          <button type="button" class="btn btn-ghost" data-paste="inToken">Paste</button>
+        </div>
+      </label>
+      <label class="field">
+        <span>Token expires (optional, for renewal reminders)</span>
+        <input type="date" id="inExpiry">
+      </label>
+
+      <button class="btn btn-primary btn-block" id="btnVerify">Verify &amp; sign in</button>
+      <p class="err" id="signinErr" hidden></p>
+    </div>
+  </div>
+</section>
+
+<!-- App shell -->
+<div id="shell" hidden>
+  <header class="topbar">
+    <span class="brand">Flip Scout</span>
+    <span class="sync-pill" id="syncPill" title="Sync status">local</span>
+    <button class="btn btn-ghost btn-small" id="btnSignout">Sign out</button>
+  </header>
+
+  <p class="token-warn" id="tokenWarn" hidden></p>
+
+  <main id="views">
+    <section id="view-investigate" class="view">
+      <div class="card placeholder">
+        <h2>Investigate</h2>
+        <p>Comp searches and buy/pass verdicts land here in story 2.1.</p>
+      </div>
+    </section>
+    <section id="view-pricebook" class="view" hidden>
+      <div class="card placeholder">
+        <h2>Price Book</h2>
+        <p>Your verdict history and search land here in story 2.2.</p>
+      </div>
+    </section>
+    <section id="view-inventory" class="view" hidden>
+      <div class="card placeholder">
+        <h2>Inventory</h2>
+        <p>FLIP-#### items, margins, and partner stakes land here in stories 3.x.</p>
+      </div>
+    </section>
+  </main>
+
+  <nav class="bottomnav">
+    <button class="navbtn active" data-view="investigate">🔍<span>Investigate</span></button>
+    <button class="navbtn" data-view="pricebook">📒<span>Price Book</span></button>
+    <button class="navbtn" data-view="inventory">📦<span>Inventory</span></button>
+  </nav>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script type="module" src="js/ui.js"></script>
+</body>
+</html>

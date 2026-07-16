@@ -1,0 +1,12 @@
+{
+  "name": "Flip Scout",
+  "short_name": "Flip Scout",
+  "description": "Buy smart, sell easy, keep score.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#faf8f4",
+  "theme_color": "#14532d",
+  "icons": [
+    { "src": "icon.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
