@@ -7,6 +7,8 @@ import * as outbox from './outbox.js';
 import { ulid } from './ulid.js';
 import { toast } from './ui.js';
 import { CATEGORIES, dollarsToCents, centsToDollars } from './investigate.js';
+import * as gh from './githubStore.js';
+import { generate, generateTitle, FIELD_SETS } from './copywriter.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -303,6 +305,8 @@ async function openDetail(id) {
 
   $('listingForm').hidden = true;
   $('saleForm').hidden = true;
+  $('copySection').hidden = true;
+  renderShotlist(d);
 
   const btns = $('detActions');
   btns.innerHTML = '';
@@ -314,10 +318,133 @@ async function openDetail(id) {
     btns.appendChild(b);
   };
   if (d.status === 'scouted') addBtn('Mark acquired', 'btn-primary', () => advanceStatus(d.id, 'acquired'));
-  if (d.status === 'acquired' || d.status === 'listed') addBtn('＋ Add listing', 'btn-primary', () => openListingForm(d));
+  if (d.status === 'acquired' || d.status === 'listed') {
+    addBtn('📝 Listing copy', 'btn-primary', () => openCopySection(d));
+    addBtn('＋ Add listing', 'btn-primary', () => openListingForm(d));
+  }
   if (d.status === 'listed') addBtn('💰 Sold…', 'btn-buy', () => openSaleForm(d));
   if (d.status !== 'sold' && d.status !== 'dead') addBtn('Mark dead', 'btn-pass', () => advanceStatus(d.id, 'dead'));
   sub('invDetail');
+}
+
+// ---------- listing copy (story 4.2 / FR-006, FR-014) ----------
+async function copyToClipboard(text, btn) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Copied ✓ paste it in the app');
+  } catch (e) {
+    // Fallback: selected textarea + one more tap (older Safari states).
+    const ta = $('copyFallback');
+    ta.hidden = false;
+    ta.value = text;
+    ta.focus();
+    ta.select();
+    toast('Clipboard blocked: text is selected below, tap Copy on the keyboard');
+  }
+  if (btn) {
+    const old = btn.textContent;
+    btn.textContent = '✓ Copied';
+    setTimeout(() => { btn.textContent = old; }, 1600);
+  }
+}
+
+function copyFields(d) {
+  const out = { ...(d.copyFields || {}) };
+  const set = FIELD_SETS[d.category] || FIELD_SETS.other;
+  set.forEach(([key]) => {
+    const el = document.getElementById('cf_' + key);
+    if (el) out[key] = el.value.trim();
+  });
+  out.name = d.name;
+  out.seed = d.id;
+  const tier = $('copyTier').value;
+  out.priceCents = tier === 'quick' ? d.priceQuickCents : tier === 'patient' ? d.pricePatientCents : dollarsToCents($('copyCustom').value);
+  return out;
+}
+
+function openCopySection(d) {
+  $('copySection').hidden = false;
+  $('listingForm').hidden = true;
+  $('saleForm').hidden = true;
+  const set = FIELD_SETS[d.category] || FIELD_SETS.other;
+  $('copyFieldRows').innerHTML = set.map(([key, label]) =>
+    `<label class="field"><span>${label}</span><input type="text" id="cf_${key}" value="${esc((d.copyFields || {})[key] || '')}"></label>`
+  ).join('');
+  const tierSel = $('copyTier');
+  tierSel.innerHTML = [
+    d.priceQuickCents != null ? `<option value="quick">Quick ${centsToDollars(d.priceQuickCents)}</option>` : '',
+    d.pricePatientCents != null ? `<option value="patient" selected>Patient ${centsToDollars(d.pricePatientCents)}</option>` : '',
+    '<option value="custom">Custom price…</option>',
+  ].join('');
+  $('copyCustom').hidden = tierSel.value !== 'custom';
+  $('copyOut').hidden = true;
+  $('copyFallback').hidden = true;
+}
+
+async function generateCopy() {
+  const r = await store.get('items', detailId);
+  if (!r) return;
+  const d = r.data;
+  const f = copyFields(d);
+  // Persist the fields so regenerating later is instant (description itself is
+  // never stored; regenerate on demand per architecture §5).
+  const now = new Date().toISOString();
+  d.copyFields = { ...f };
+  delete d.copyFields.priceCents;
+  delete d.copyFields.seed;
+  delete d.copyFields.name;
+  d.updatedAt = now;
+  await outbox.enqueueRecord('items', detailId, d);
+
+  const platform = $('copyPlatform').value;
+  const title = generateTitle(d.category, platform, f);
+  const desc = generate(d.category, platform, f);
+  $('copyTitleOut').textContent = title;
+  $('copyDescOut').textContent = desc;
+  $('copyOut').hidden = false;
+  $('btnCopyTitle').onclick = (e) => copyToClipboard(title, e.target);
+  $('btnCopyDesc').onclick = (e) => copyToClipboard(desc, e.target);
+}
+
+// ---------- shot list (FR-007) ----------
+const DEFAULT_SHOTS = {
+  electronics: ['Front, powered ON', 'Model/serial label', 'All ports up close', 'Included cables laid out', 'Any flaws up close'],
+  musical: ['Full front', 'Brand/model badge', 'Keys/strings up close', 'Powered on / in playing position', 'Included stand/pedal/case', 'Any flaws up close'],
+  tools: ['Full tool', 'Model plate', 'Running (photo or short video)', 'Blades/bits/accessories', 'Any flaws up close'],
+  furniture: ['Full front', 'Each side', 'Surface up close', 'Drawers/doors open', 'Tag/maker mark if any', 'Any flaws up close'],
+  other: ['Full front', 'Label/brand', 'Any flaws up close'],
+};
+let shotlists = DEFAULT_SHOTS;
+
+function loadShotlists() {
+  store.metaGet('shotlists').then((c) => { if (c) shotlists = c; });
+  gh.readFile('config/shotlists.json').then((r) => {
+    if (r.ok && r.json.shotlists) {
+      shotlists = r.json.shotlists;
+      store.metaSet('shotlists', shotlists);
+    }
+  }).catch(() => {});
+}
+
+function renderShotlist(d) {
+  const box = $('shotList');
+  if (d.status === 'sold' || d.status === 'dead') { box.innerHTML = ''; return; }
+  const shots = shotlists[d.category] || shotlists.other;
+  const checked = new Set(d.shotChecks || []);
+  box.innerHTML = '<p class="pipe-group">Photo shot list</p>' + shots.map((s) =>
+    `<label class="confirm-row shot-row"><input type="checkbox" data-shot="${esc(s)}"${checked.has(s) ? ' checked' : ''}><span>${esc(s)}</span></label>`
+  ).join('');
+  box.querySelectorAll('input[data-shot]').forEach((cb) => {
+    cb.addEventListener('change', async () => {
+      const r = await store.get('items', d.id);
+      if (!r) return;
+      const set = new Set(r.data.shotChecks || []);
+      if (cb.checked) set.add(cb.dataset.shot); else set.delete(cb.dataset.shot);
+      r.data.shotChecks = [...set];
+      r.data.updatedAt = new Date().toISOString();
+      await outbox.enqueueRecord('items', d.id, r.data);
+    });
+  });
 }
 
 // ---------- listing entry (FR-004/FR-014: tier-tap price defaults) ----------
@@ -457,6 +584,11 @@ export function init() {
   $('btnLiCancel').addEventListener('click', () => { $('listingForm').hidden = true; });
   $('btnSaSave').addEventListener('click', saveSale);
   $('btnSaCancel').addEventListener('click', () => { $('saleForm').hidden = true; });
+  $('btnGenerate').addEventListener('click', generateCopy);
+  $('btnCopyClose').addEventListener('click', () => { $('copySection').hidden = true; });
+  $('copyTier').addEventListener('input', () => { $('copyCustom').hidden = $('copyTier').value !== 'custom'; });
+  $('copyPlatform').addEventListener('input', () => { if (!$('copyOut').hidden) generateCopy(); });
+  loadShotlists();
   $('btnDetBack').addEventListener('click', () => { sub('invList'); renderList(); });
   $('btnDetEdit').addEventListener('click', async () => {
     const r = await store.get('items', detailId);

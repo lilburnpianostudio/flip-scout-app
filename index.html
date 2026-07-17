@@ -204,6 +204,27 @@
             </div>
           </div>
 
+          <div id="copySection" hidden class="subform">
+            <h3>Listing copy</h3>
+            <div class="tworow">
+              <label class="field"><span>For platform</span><select id="copyPlatform"><option value="fbm">FB Marketplace</option><option value="ebay">eBay</option></select></label>
+              <label class="field"><span>Price to show</span><select id="copyTier"></select></label>
+            </div>
+            <input type="text" inputmode="decimal" id="copyCustom" placeholder="$ custom price" hidden style="margin-bottom:10px;">
+            <div id="copyFieldRows"></div>
+            <button class="btn btn-primary btn-block" id="btnGenerate">✍️ Generate</button>
+            <div id="copyOut" hidden>
+              <p class="pipe-group">Title <button type="button" class="btn btn-ghost btn-small" id="btnCopyTitle">Copy title</button></p>
+              <p class="copy-text" id="copyTitleOut"></p>
+              <p class="pipe-group">Description <button type="button" class="btn btn-ghost btn-small" id="btnCopyDesc">Copy description</button></p>
+              <p class="copy-text" id="copyDescOut"></p>
+              <textarea id="copyFallback" hidden rows="4"></textarea>
+            </div>
+            <button class="btn btn-ghost btn-block" id="btnCopyClose" style="margin-top:8px;">Close copy</button>
+          </div>
+
+          <div id="shotList"></div>
+
           <div class="tworow" style="margin-top:10px;">
             <button class="btn btn-ghost" id="btnDetEdit">Edit</button>
             <button class="btn btn-ghost" id="btnDetBack">← Back</button>
