@@ -23,6 +23,28 @@ export function sharesTotal(partners) {
   return (partners || []).reduce((s, p) => s + (Number(p.sharePct) || 0), 0);
 }
 
+// Margin is DERIVED, never stored (architecture §5). Integer-cent math.
+export function computeMargin(d) {
+  if (!d.sale || d.sale.priceCents == null) return null;
+  return d.sale.priceCents - (d.costCents || 0) - (d.sale.feesCents || 0);
+}
+
+// Per-partner payouts from a margin (FR-013): round(margin × share% / 100).
+export function partnerPayouts(marginCents, partners) {
+  return (partners || [])
+    .filter((p) => p.name && Number(p.sharePct) > 0)
+    .map((p) => ({ name: p.name, payoutCents: Math.round(marginCents * Number(p.sharePct) / 100) }));
+}
+
+// Payout preview for an UNSOLD item at a hypothetical sale price (FLIP-D10).
+export function previewAt(d, priceCents) {
+  const margin = priceCents - (d.costCents || 0);
+  return { marginCents: margin, payouts: partnerPayouts(margin, d.partners) };
+}
+
+const SELL_PLATFORMS = [['fbm', 'FB Marketplace'], ['ebay', 'eBay'], ['offerup', 'OfferUp (existing)']];
+const platformLabel = (id) => (SELL_PLATFORMS.find(([v]) => v === id) || [id, id])[1];
+
 let editingId = null; // ulid of item being edited, null = creating
 
 function blankItem() {
@@ -203,23 +225,132 @@ async function openDetail(id) {
   if (d.partners && d.partners.length) {
     rows.push(['Partners', d.partners.map((p) => `${esc(p.name)} ${p.sharePct || 0}%${p.investedCents != null ? ' (' + centsToDollars(p.investedCents) + ' in)' : ''}`).join('<br>')]);
   }
+  if (d.listings && d.listings.length) {
+    rows.push(['Listed on', d.listings.map((l) => `${platformLabel(l.platform)} · ${centsToDollars(l.priceCents)} · ${l.listedAt || ''}${l.url ? ` · <a href="${esc(l.url)}" target="_blank" rel="noopener">open</a>` : ''}`).join('<br>')]);
+  }
+  if (d.sale) {
+    rows.push(['Sold', `${platformLabel(d.sale.platform)} · ${centsToDollars(d.sale.priceCents)} · ${d.sale.soldAt || ''}${d.sale.feesCents ? ' · fees ' + centsToDollars(d.sale.feesCents) : ''}`]);
+    const m = computeMargin(d);
+    rows.push(['Margin', `<b class="${m >= 0 ? 'v-buy' : 'v-loss'}">${centsToDollars(m)}</b>`]);
+    partnerPayouts(m, d.partners).forEach((p) => rows.push(['→ ' + esc(p.name), centsToDollars(p.payoutCents)]));
+  } else if (d.partners && d.partners.length && d.status !== 'dead') {
+    // Negotiation table (FLIP-D10): what each partner makes at each tier.
+    const tiers = [['quick', d.priceQuickCents], ['patient', d.pricePatientCents]].filter(([, c]) => c != null);
+    tiers.forEach(([label, cents]) => {
+      const pv = previewAt(d, cents);
+      const lines = [`margin ${centsToDollars(pv.marginCents)}`]
+        .concat(pv.payouts.map((p) => `${esc(p.name)} makes ${centsToDollars(p.payoutCents)}`));
+      rows.push([`If sold ${label} (${centsToDollars(cents)})`, lines.join('<br>')]);
+    });
+  }
   if (d.notes) rows.push(['Notes', esc(d.notes)]);
   $('detRows').innerHTML = rows.map(([k, v]) => `<div class="det-row"><span>${k}</span><div>${v}</div></div>`).join('');
 
+  $('listingForm').hidden = true;
+  $('saleForm').hidden = true;
+
   const btns = $('detActions');
   btns.innerHTML = '';
-  (TRANSITIONS[d.status] || []).forEach((next) => {
+  const addBtn = (label, cls, fn) => {
     const b = document.createElement('button');
-    b.className = 'btn ' + (next === 'dead' ? 'btn-pass' : 'btn-primary');
-    b.textContent = next === 'dead' ? 'Mark dead' : 'Mark ' + next;
-    if (next === 'sold') {
-      b.textContent = 'Sold… (arrives in 3.2)';
-      b.disabled = true;
-    }
-    b.addEventListener('click', () => advanceStatus(d.id, next));
+    b.className = 'btn ' + cls;
+    b.textContent = label;
+    b.addEventListener('click', fn);
     btns.appendChild(b);
-  });
+  };
+  if (d.status === 'scouted') addBtn('Mark acquired', 'btn-primary', () => advanceStatus(d.id, 'acquired'));
+  if (d.status === 'acquired' || d.status === 'listed') addBtn('＋ Add listing', 'btn-primary', () => openListingForm(d));
+  if (d.status === 'listed') addBtn('💰 Sold…', 'btn-buy', () => openSaleForm(d));
+  if (d.status !== 'sold' && d.status !== 'dead') addBtn('Mark dead', 'btn-pass', () => advanceStatus(d.id, 'dead'));
   sub('invDetail');
+}
+
+// ---------- listing entry (FR-004/FR-014: tier-tap price defaults) ----------
+function tierButtons(d, priceInputId) {
+  const box = document.createElement('div');
+  box.className = 'tier-row';
+  [['Quick', d.priceQuickCents], ['Patient', d.pricePatientCents]].forEach(([label, cents]) => {
+    if (cents == null) return;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn btn-ghost btn-small';
+    b.textContent = `${label} ${centsToDollars(cents)}`;
+    b.addEventListener('click', () => { $(priceInputId).value = (cents / 100); });
+    box.appendChild(b);
+  });
+  return box;
+}
+
+function openListingForm(d) {
+  $('listingForm').hidden = false;
+  $('saleForm').hidden = true;
+  $('liPlatform').innerHTML = SELL_PLATFORMS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  $('liPrice').value = '';
+  $('liDate').value = new Date().toISOString().slice(0, 10);
+  $('liUrl').value = '';
+  const tb = $('liTiers');
+  tb.innerHTML = '';
+  tb.appendChild(tierButtons(d, 'liPrice'));
+}
+
+async function saveListing() {
+  const r = await store.get('items', detailId);
+  if (!r) return;
+  const priceCents = dollarsToCents($('liPrice').value);
+  if (priceCents == null) { toast('Listing needs a price (tap a tier)'); return; }
+  const now = new Date().toISOString();
+  r.data.listings = r.data.listings || [];
+  r.data.listings.push({
+    platform: $('liPlatform').value,
+    priceCents,
+    listedAt: $('liDate').value || now.slice(0, 10),
+    url: $('liUrl').value.trim() || undefined,
+  });
+  if (r.data.status === 'acquired') {
+    r.data.status = 'listed';
+    r.data.statusChangedAt = now;
+  }
+  r.data.updatedAt = now;
+  await outbox.enqueueRecord('items', detailId, r.data);
+  toast('Listed ✓');
+  openDetail(detailId);
+  renderList();
+}
+
+// ---------- sale close (FR-004/FR-005) ----------
+function openSaleForm(d) {
+  $('saleForm').hidden = false;
+  $('listingForm').hidden = true;
+  const last = (d.listings && d.listings.length) ? d.listings[d.listings.length - 1].platform : 'fbm';
+  $('saPlatform').innerHTML = SELL_PLATFORMS.map(([v, l]) => `<option value="${v}"${v === last ? ' selected' : ''}>${l}</option>`).join('');
+  $('saPrice').value = '';
+  $('saFees').value = '';
+  $('saDate').value = new Date().toISOString().slice(0, 10);
+  const tb = $('saTiers');
+  tb.innerHTML = '';
+  tb.appendChild(tierButtons(d, 'saPrice'));
+}
+
+async function saveSale() {
+  const r = await store.get('items', detailId);
+  if (!r) return;
+  const priceCents = dollarsToCents($('saPrice').value);
+  if (priceCents == null) { toast('What did it sell for?'); return; }
+  const now = new Date().toISOString();
+  r.data.sale = {
+    platform: $('saPlatform').value,
+    priceCents,
+    soldAt: $('saDate').value || now.slice(0, 10),
+    feesCents: dollarsToCents($('saFees').value) || 0,
+  };
+  r.data.status = 'sold';
+  r.data.statusChangedAt = now;
+  r.data.updatedAt = now;
+  await outbox.enqueueRecord('items', detailId, r.data);
+  const m = computeMargin(r.data);
+  toast(`Sold! Margin ${centsToDollars(m)} 🎉`);
+  openDetail(detailId);
+  renderList();
 }
 
 async function advanceStatus(id, next) {
@@ -267,6 +398,10 @@ export function init() {
   $('btnAddPartner').addEventListener('click', () => { formPartners.push({ name: '', sharePct: 0, investedCents: null }); renderPartners(); });
   $('btnItemSave').addEventListener('click', saveForm);
   $('btnItemCancel').addEventListener('click', () => sub('invList'));
+  $('btnLiSave').addEventListener('click', saveListing);
+  $('btnLiCancel').addEventListener('click', () => { $('listingForm').hidden = true; });
+  $('btnSaSave').addEventListener('click', saveSale);
+  $('btnSaCancel').addEventListener('click', () => { $('saleForm').hidden = true; });
   $('btnDetBack').addEventListener('click', () => { sub('invList'); renderList(); });
   $('btnDetEdit').addEventListener('click', async () => {
     const r = await store.get('items', detailId);

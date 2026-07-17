@@ -54,6 +54,7 @@
   <header class="topbar">
     <span class="brand">Flip Scout</span>
     <span class="sync-pill" id="syncPill" title="Sync status">local</span>
+    <button class="btn btn-ghost btn-small" id="btnHelp" title="How to use">?</button>
     <button class="btn btn-ghost btn-small" id="btnSignout">Sign out</button>
   </header>
 
@@ -171,6 +172,37 @@
           <h2 id="detTitle"></h2>
           <div id="detRows"></div>
           <div class="det-actions" id="detActions"></div>
+
+          <div id="listingForm" hidden class="subform">
+            <h3>Add listing</h3>
+            <label class="field"><span>Platform</span><select id="liPlatform"></select></label>
+            <label class="field"><span>Listing price</span><input type="text" inputmode="decimal" id="liPrice" placeholder="$"></label>
+            <div id="liTiers"></div>
+            <div class="tworow">
+              <label class="field"><span>Date listed</span><input type="date" id="liDate"></label>
+              <label class="field"><span>Listing URL (optional)</span><input type="text" id="liUrl" placeholder="paste link"></label>
+            </div>
+            <div class="tworow">
+              <button class="btn btn-primary" id="btnLiSave">Save listing</button>
+              <button class="btn btn-ghost" id="btnLiCancel">Cancel</button>
+            </div>
+          </div>
+
+          <div id="saleForm" hidden class="subform">
+            <h3>Close the sale</h3>
+            <label class="field"><span>Sold where</span><select id="saPlatform"></select></label>
+            <label class="field"><span>Sold for</span><input type="text" inputmode="decimal" id="saPrice" placeholder="$"></label>
+            <div id="saTiers"></div>
+            <div class="tworow">
+              <label class="field"><span>Fees/shipping</span><input type="text" inputmode="decimal" id="saFees" placeholder="$0"></label>
+              <label class="field"><span>Date sold</span><input type="date" id="saDate"></label>
+            </div>
+            <div class="tworow">
+              <button class="btn btn-buy" id="btnSaSave">Mark sold 💰</button>
+              <button class="btn btn-ghost" id="btnSaCancel">Cancel</button>
+            </div>
+          </div>
+
           <div class="tworow" style="margin-top:10px;">
             <button class="btn btn-ghost" id="btnDetEdit">Edit</button>
             <button class="btn btn-ghost" id="btnDetBack">← Back</button>
@@ -187,6 +219,49 @@
     <button class="navbtn" data-view="inventory">📦<span>Inventory</span></button>
   </nav>
 </div>
+
+<!-- How-to guide -->
+<section id="view-help" class="view" hidden>
+  <div class="card">
+    <h2>How Flip Scout works</h2>
+    <p class="hint">The whole system in one page. Tap ? anytime to get back here.</p>
+
+    <h3 class="help-h">🔍 At a garage sale (under a minute)</h3>
+    <ol class="help-list">
+      <li>Investigate tab: type or dictate the item name (mic button on your keyboard works everywhere).</li>
+      <li>Tap Investigate, then tap <b>eBay SOLD comps</b>: those are real prices things actually sold for, not asking prices.</li>
+      <li>Come back, enter your max-buy price and a one-line reason.</li>
+      <li>Tap <b>Buy</b> or <b>Pass</b>. Both are saved: passes build your price book too.</li>
+    </ol>
+
+    <h3 class="help-h">📦 When you buy something</h3>
+    <ol class="help-list">
+      <li>On the buy verdict, tap <b>Acquired</b>: the item form opens pre-filled. Fix the cost to what you actually paid.</li>
+      <li>It gets a FLIP number. A star (FLIP-0007*) just means the number locks in at next sync.</li>
+      <li>Set your two prices: <b>quick-sale</b> (move it this week) and <b>patient</b> (willing to wait).</li>
+      <li>If the girls are in on the deal, add them under Partners: their name, agreed share %, and what cash they put in. The item then shows what each person makes at each price, before you agree.</li>
+    </ol>
+
+    <h3 class="help-h">🛒 Listing and selling</h3>
+    <ol class="help-list">
+      <li>Post the item on FB or eBay yourself (copy helper is coming in the next update).</li>
+      <li>On the item, tap <b>＋ Add listing</b>: pick the platform, tap a price tier, done.</li>
+      <li>When it sells: <b>💰 Sold…</b> with price, fees, date. Margin and partner payouts compute themselves.</li>
+      <li>Item didn't work out? <b>Mark dead</b>. It keeps its number and teaches the stats later.</li>
+    </ol>
+
+    <h3 class="help-h">📒 Price book</h3>
+    <p class="help-p">Middle tab. Search anything you've ever investigated. After a month of scouting you'll make buy calls straight from here without opening a single search.</p>
+
+    <h3 class="help-h">🔄 The sync pill (top bar)</h3>
+    <p class="help-p"><b>synced</b> = everything is in your GitHub repo. <b>2 to sync</b> = captures waiting (normal in dead zones, nothing is lost). Tap the pill to force a sync. Airplane mode is fine: everything saves on the phone and uploads later.</p>
+
+    <h3 class="help-h">🔑 Sign-in</h3>
+    <p class="help-p">One token per device, entered once. It lasts about a year and the app warns you 30 days before it expires. Renew at github.com → Settings → Developer settings → Fine-grained tokens.</p>
+
+    <button class="btn btn-primary btn-block" id="btnHelpClose">Got it ←</button>
+  </div>
+</section>
 
 <div class="toast" id="toast" hidden></div>
 

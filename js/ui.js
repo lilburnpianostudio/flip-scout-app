@@ -150,6 +150,8 @@ function boot() {
   });
   $('btnVerify').addEventListener('click', verify);
   $('btnSignout').addEventListener('click', signout);
+  $('btnHelp').addEventListener('click', () => { $('shell').hidden = true; $('view-help').hidden = false; });
+  $('btnHelpClose').addEventListener('click', () => { $('view-help').hidden = true; $('shell').hidden = false; });
   wirePasteButtons(document);
 
   window.addEventListener('online', () => { outbox.sync().then(refreshPill).catch(() => {}); refreshPill(); });
