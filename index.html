@@ -118,10 +118,66 @@
       </div>
     </section>
     <section id="view-inventory" class="view" hidden>
-      <div class="card placeholder">
-        <h2>Inventory</h2>
-        <p>FLIP-#### items, margins, and partner stakes land here in stories 3.x.</p>
+
+      <div id="invList">
+        <div class="card">
+          <h2>Inventory</h2>
+          <button class="btn btn-primary btn-block" id="btnNewItem">＋ New item</button>
+          <div id="itemRows" class="pb-list"></div>
+        </div>
       </div>
+
+      <div id="invForm" hidden>
+        <div class="card">
+          <h2 id="invFormTitle">New item</h2>
+          <label class="field"><span>What is it?</span>
+            <div class="paste-row">
+              <input type="text" id="itName" placeholder="brand + model">
+              <button type="button" class="btn btn-ghost" data-paste="itName">Paste</button>
+            </div>
+          </label>
+          <div class="tworow">
+            <label class="field"><span>Category</span><select id="itCategory"></select></label>
+            <label class="field"><span>What I paid</span><input type="text" inputmode="decimal" id="itCost" placeholder="$"></label>
+          </div>
+          <div class="tworow">
+            <label class="field"><span>Where I got it</span><input type="text" id="itSource" placeholder="garage sale, Goodwill…"></label>
+            <label class="field"><span>Date</span><input type="date" id="itAcquiredAt"></label>
+          </div>
+          <div class="tworow">
+            <label class="field"><span>Quick-sale price</span><input type="text" inputmode="decimal" id="itQuick" placeholder="$ move it this week"></label>
+            <label class="field"><span>Patient price</span><input type="text" inputmode="decimal" id="itPatient" placeholder="$ willing to wait"></label>
+          </div>
+          <label class="field"><span>Notes</span>
+            <div class="paste-row">
+              <input type="text" id="itNotes" placeholder="condition, quirks…">
+              <button type="button" class="btn btn-ghost" data-paste="itNotes">Paste</button>
+            </div>
+          </label>
+          <div class="field">
+            <span class="partner-head">Partners (the girls' stakes) <button type="button" class="btn btn-ghost btn-small" id="btnAddPartner">＋ add</button></span>
+            <div id="partnerRows"></div>
+            <p class="err" id="shareWarn" hidden></p>
+          </div>
+          <div class="tworow">
+            <button class="btn btn-primary" id="btnItemSave">Save</button>
+            <button class="btn btn-ghost" id="btnItemCancel">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="invDetail" hidden>
+        <div class="card">
+          <h2 id="detTitle"></h2>
+          <div id="detRows"></div>
+          <div class="det-actions" id="detActions"></div>
+          <div class="tworow" style="margin-top:10px;">
+            <button class="btn btn-ghost" id="btnDetEdit">Edit</button>
+            <button class="btn btn-ghost" id="btnDetBack">← Back</button>
+          </div>
+        </div>
+      </div>
+
     </section>
   </main>
 

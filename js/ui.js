@@ -7,6 +7,7 @@ import * as store from './store.js';
 import * as outbox from './outbox.js';
 import * as investigate from './investigate.js';
 import * as pricebook from './pricebook.js';
+import * as inventory from './inventory.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -166,6 +167,7 @@ function boot() {
 
   investigate.init(show);
   pricebook.init();
+  inventory.init();
 
   if (gh.hasToken()) showShell();
   else showSignin();
