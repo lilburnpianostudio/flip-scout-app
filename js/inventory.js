@@ -160,7 +160,7 @@ async function renderList() {
   rows.forEach((r) => (bySt[r.data.status] || bySt.scouted).push(r));
   Object.values(bySt).forEach((g) => g.sort((a, b) => (a.data.createdAt < b.data.createdAt ? 1 : -1)));
 
-  [['acquired', 'To list'], ['listed', 'Listed, waiting on a buyer'], ['scouted', 'Scouted']].forEach(([st, label]) => {
+  [['acquired', 'Not listed yet'], ['listed', 'Listed, waiting on a buyer'], ['scouted', 'Scouted']].forEach(([st, label]) => {
     if (!bySt[st].length) return;
     const h = document.createElement('p');
     h.className = 'pipe-group';

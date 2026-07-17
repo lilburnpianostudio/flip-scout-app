@@ -124,6 +124,21 @@ function clearForm() {
 export function init(showView) {
   loadPlatforms();
   $('btnInvestigate').addEventListener('click', renderLinks);
+  $('btnAiPrompt').addEventListener('click', async () => {
+    const hint = $('invName').value.trim();
+    const prompt = 'I am at a thrift store or garage sale deciding whether to buy this item to resell (photo attached). Tell me: '
+      + '1) Exactly what it is: brand, model, and what to look for on the label to confirm. '
+      + '2) What it actually sells for USED right now, based on eBay SOLD listings, not asking prices. '
+      + '3) Common problems or fakes to check before buying. '
+      + '4) My max buy price if I want to at least double my money after fees.'
+      + (hint ? ' Item hint: ' + hint + '.' : '');
+    try {
+      await navigator.clipboard.writeText(prompt);
+      toast('Prompt copied: open Claude, add your photo, paste');
+    } catch (e) {
+      toast('Could not reach the clipboard, try again');
+    }
+  });
   $('invName').addEventListener('keydown', (e) => { if (e.key === 'Enter') renderLinks(); });
   $('btnVerdictBuy').addEventListener('click', () => saveVerdict('buy'));
   $('btnVerdictPass').addEventListener('click', () => saveVerdict('pass'));
