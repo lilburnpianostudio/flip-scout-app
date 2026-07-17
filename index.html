@@ -33,10 +33,7 @@
       </label>
       <label class="field">
         <span>Fine-grained token</span>
-        <div class="paste-row">
-          <input type="password" id="inToken" autocapitalize="none" autocorrect="off" placeholder="github_pat_…">
-          <button type="button" class="btn btn-ghost" data-paste="inToken">Paste</button>
-        </div>
+        <input type="password" id="inToken" autocapitalize="none" autocorrect="off" placeholder="github_pat_…">
       </label>
       <label class="field">
         <span>Token expires (optional, for renewal reminders)</span>
@@ -66,10 +63,7 @@
         <h2>Quick investigation</h2>
         <label class="field">
           <span>What are you looking at?</span>
-          <div class="paste-row">
-            <input type="text" id="invName" placeholder="brand + model, e.g. dewalt dw735" autocapitalize="none">
-            <button type="button" class="btn btn-ghost" data-paste="invName">Paste</button>
-          </div>
+          <input type="text" id="invName" placeholder="brand + model, e.g. dewalt dw735" autocapitalize="none">
         </label>
         <label class="field">
           <span>Category</span>
@@ -106,10 +100,7 @@
       <div class="card">
         <h2>Price book <span class="pb-count" id="pbCount"></span></h2>
         <label class="field">
-          <div class="paste-row">
-            <input type="text" id="pbSearch" placeholder="search item or reason…" autocapitalize="none">
-            <button type="button" class="btn btn-ghost" data-paste="pbSearch">Paste</button>
-          </div>
+          <input type="text" id="pbSearch" placeholder="search item or reason…" autocapitalize="none">
         </label>
         <div class="tworow">
           <select id="pbCategory"><option value="all">All categories</option></select>
@@ -133,10 +124,7 @@
         <div class="card">
           <h2 id="invFormTitle">New item</h2>
           <label class="field"><span>What is it?</span>
-            <div class="paste-row">
-              <input type="text" id="itName" placeholder="brand + model">
-              <button type="button" class="btn btn-ghost" data-paste="itName">Paste</button>
-            </div>
+            <input type="text" id="itName" placeholder="brand + model">
           </label>
           <div class="tworow">
             <label class="field"><span>Category</span><select id="itCategory"></select></label>
@@ -150,11 +138,11 @@
             <label class="field"><span>Quick-sale price</span><input type="text" inputmode="decimal" id="itQuick" placeholder="$ move it this week"></label>
             <label class="field"><span>Patient price</span><input type="text" inputmode="decimal" id="itPatient" placeholder="$ willing to wait"></label>
           </div>
-          <label class="field"><span>Notes</span>
-            <div class="paste-row">
-              <input type="text" id="itNotes" placeholder="condition, quirks…">
-              <button type="button" class="btn btn-ghost" data-paste="itNotes">Paste</button>
-            </div>
+          <label class="field"><span>Listing description (title is the name above; this is the body you paste into FB/eBay)</span>
+            <textarea id="itDesc" rows="4" placeholder="write it, dictate it, or tap 📝 Listing copy on the item to generate one"></textarea>
+          </label>
+          <label class="field"><span>Notes (private, never in listings)</span>
+            <input type="text" id="itNotes" placeholder="condition, quirks…">
           </label>
           <div class="field">
             <span class="partner-head">Partners (the girls' stakes) <button type="button" class="btn btn-ghost btn-small" id="btnAddPartner">＋ add</button></span>
@@ -218,6 +206,7 @@
               <p class="copy-text" id="copyTitleOut"></p>
               <p class="pipe-group">Description <button type="button" class="btn btn-ghost btn-small" id="btnCopyDesc">Copy description</button></p>
               <p class="copy-text" id="copyDescOut"></p>
+              <button type="button" class="btn btn-ghost btn-block" id="btnSaveDesc">💾 Save as this item's description</button>
               <textarea id="copyFallback" hidden rows="4"></textarea>
             </div>
             <button class="btn btn-ghost btn-block" id="btnCopyClose" style="margin-top:8px;">Close copy</button>

@@ -182,6 +182,7 @@ function openForm(prefill) {
   $('itAcquiredAt').value = d.acquiredAt || new Date().toISOString().slice(0, 10);
   $('itQuick').value = d.priceQuickCents != null ? (d.priceQuickCents / 100) : '';
   $('itPatient').value = d.pricePatientCents != null ? (d.pricePatientCents / 100) : '';
+  $('itDesc').value = d.description || '';
   $('itNotes').value = d.notes || '';
   formPartners = (d.partners || []).map((p) => ({ ...p }));
   renderPartners();
@@ -237,6 +238,7 @@ async function saveForm() {
   d.acquiredAt = $('itAcquiredAt').value || d.acquiredAt;
   d.priceQuickCents = dollarsToCents($('itQuick').value);
   d.pricePatientCents = dollarsToCents($('itPatient').value);
+  d.description = $('itDesc').value.trim();
   d.notes = $('itNotes').value.trim();
   d.partners = formPartners.filter((p) => p.name && p.name.trim());
   d.updatedAt = now;
@@ -300,6 +302,7 @@ async function openDetail(id) {
       rows.push([`If sold ${label} (${centsToDollars(cents)})`, lines.join('<br>')]);
     });
   }
+  if (d.description) rows.push(['Description', `<span class="copy-text" style="display:block;">${esc(d.description)}</span>`]);
   if (d.notes) rows.push(['Notes', esc(d.notes)]);
   $('detRows').innerHTML = rows.map(([k, v]) => `<div class="det-row"><span>${k}</span><div>${v}</div></div>`).join('');
 
@@ -317,6 +320,8 @@ async function openDetail(id) {
     b.addEventListener('click', fn);
     btns.appendChild(b);
   };
+  if (d.name) addBtn('📋 Copy title', 'btn-ghost', (e) => copyToClipboard(d.name, e.target));
+  if (d.description) addBtn('📋 Copy description', 'btn-ghost', (e) => copyToClipboard(d.description, e.target));
   if (d.status === 'scouted') addBtn('Mark acquired', 'btn-primary', () => advanceStatus(d.id, 'acquired'));
   if (d.status === 'acquired' || d.status === 'listed') {
     addBtn('📝 Listing copy', 'btn-primary', () => openCopySection(d));
@@ -404,6 +409,14 @@ async function generateCopy() {
   $('copyOut').hidden = false;
   $('btnCopyTitle').onclick = (e) => copyToClipboard(title, e.target);
   $('btnCopyDesc').onclick = (e) => copyToClipboard(desc, e.target);
+  $('btnSaveDesc').onclick = async () => {
+    const rec = await store.get('items', detailId);
+    if (!rec) return;
+    rec.data.description = desc;
+    rec.data.updatedAt = new Date().toISOString();
+    await outbox.enqueueRecord('items', detailId, rec.data);
+    toast('Saved to the item ✓');
+  };
 }
 
 // ---------- shot list (FR-007) ----------

@@ -13,7 +13,7 @@ const $ = (id) => document.getElementById(id);
 
 // Bump alongside the sw.js cache version. Shown in the topbar so "what version
 // are you on?" is never a guessing game.
-export const APP_VERSION = 'v12';
+export const APP_VERSION = 'v13';
 
 // ---------- toast ----------
 let toastTimer;
@@ -25,24 +25,9 @@ export function toast(msg) {
   toastTimer = setTimeout(() => { t.hidden = true; }, 1800);
 }
 
-// ---------- paste buttons (FLIP-D11: one-tap paste, dictation-safe inputs) ----------
-function wirePasteButtons(root) {
-  root.querySelectorAll('[data-paste]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      try {
-        const text = await navigator.clipboard.readText();
-        if (text) {
-          $(btn.dataset.paste).value = text.trim();
-          toast('Pasted');
-        } else {
-          toast('Clipboard is empty');
-        }
-      } catch (e) {
-        toast('Tap the field and use Paste from the keyboard');
-      }
-    });
-  });
-}
+// Paste buttons removed 2026-07-17 (FLIP-D13): iOS shows a system "Allow paste?"
+// bubble on every programmatic clipboard read, making the button SLOWER than
+// native long-press → Paste. Inputs stay plain so dictation and long-press work.
 
 // ---------- routing ----------
 const VIEWS = ['investigate', 'pricebook', 'inventory'];
@@ -157,7 +142,6 @@ function boot() {
   $('btnSignout').addEventListener('click', signout);
   $('btnHelp').addEventListener('click', () => { $('shell').hidden = true; $('view-help').hidden = false; });
   $('btnHelpClose').addEventListener('click', () => { $('view-help').hidden = true; $('shell').hidden = false; });
-  wirePasteButtons(document);
 
   window.addEventListener('online', () => { outbox.sync().then(refreshPill).catch(() => {}); refreshPill(); });
   window.addEventListener('offline', refreshPill);
