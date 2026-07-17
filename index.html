@@ -58,60 +58,20 @@
   <p class="token-warn" id="tokenWarn" hidden></p>
 
   <main id="views">
-    <section id="view-investigate" class="view">
+    <section id="view-investigate" class="view" hidden>
       <div class="card">
-        <h2>Quick investigation</h2>
+        <h2>Research</h2>
         <label class="field">
           <span>What are you looking at?</span>
           <input type="text" id="invName" placeholder="brand + model, e.g. dewalt dw735" autocapitalize="none">
         </label>
-        <label class="field">
-          <span>Category</span>
-          <select id="invCategory"></select>
-        </label>
-        <button class="btn btn-primary btn-block" id="btnInvestigate">🔍 Investigate</button>
-        <button class="btn btn-ghost btn-block" id="btnAiPrompt" style="margin-top:8px;">🤖 Copy AI prompt (for a photo in the Claude app)</button>
+        <button class="btn btn-primary btn-block" id="btnInvestigate">🔍 Look it up</button>
+        <button class="btn btn-ghost btn-block" id="btnAiPrompt" style="margin-top:8px;">🤖 Copy AI prompt (photo → Claude app)</button>
         <div class="linkgrid" id="invLinks"></div>
-      </div>
-
-      <div class="card" id="verdictCard" hidden>
-        <h2>My decision</h2>
-        <p class="hint">This is just a diary of what you decided at the shelf, so future-you remembers. Buy = worth it. Pass = walked away. Both make your Price Book smarter.</p>
-        <div class="tworow">
-          <label class="field"><span>Asking price</span><input type="text" inputmode="decimal" id="invAsking" placeholder="$"></label>
-          <label class="field"><span>My max buy</span><input type="text" inputmode="decimal" id="invMaxBuy" placeholder="$"></label>
-        </div>
-        <label class="field"><span>Why (one line)</span><input type="text" id="invReason" placeholder="sold comps around $80, works great"></label>
-        <label class="field"><span>Where (optional)</span><input type="text" id="invWhere" placeholder="Goodwill Lilburn"></label>
-        <div class="tworow">
-          <button class="btn btn-buy" id="btnVerdictBuy">✅ Worth buying</button>
-          <button class="btn btn-pass" id="btnVerdictPass">✋ Passing</button>
-        </div>
-        <div class="tworow" id="acquiredRow" hidden>
-          <button class="btn btn-primary btn-block" id="btnAcquired">📦 I bought it → add to Inventory</button>
-        </div>
-        <button class="btn btn-ghost btn-block" id="btnNewInv" style="margin-top:8px;">New investigation</button>
-      </div>
-
-      <div class="card">
-        <h2>Recent</h2>
-        <div id="invRecent" class="recent"></div>
+        <button class="btn btn-buy btn-block" id="btnResearchAdd" style="margin-top:14px;">📦 Bought it → add to Inventory</button>
       </div>
     </section>
-    <section id="view-pricebook" class="view" hidden>
-      <div class="card">
-        <h2>Price book <span class="pb-count" id="pbCount"></span></h2>
-        <label class="field">
-          <input type="text" id="pbSearch" placeholder="search item or reason…" autocapitalize="none">
-        </label>
-        <div class="tworow">
-          <select id="pbCategory"><option value="all">All categories</option></select>
-          <select id="pbVerdict"><option value="all">Buy + Pass</option><option value="buy">Buy only</option><option value="pass">Pass only</option></select>
-        </div>
-        <div id="pbResults" class="pb-list"></div>
-      </div>
-    </section>
-    <section id="view-inventory" class="view" hidden>
+    <section id="view-inventory" class="view">
 
       <div id="invList">
         <div class="card">
@@ -229,8 +189,7 @@
 
   <nav class="bottomnav">
     <button class="navbtn active" data-view="inventory">📦<span>Inventory</span></button>
-    <button class="navbtn" data-view="pricebook">📒<span>Price Book</span></button>
-    <button class="navbtn" data-view="investigate">🔍<span>Investigate</span></button>
+    <button class="navbtn" data-view="investigate">🔍<span>Research</span></button>
   </nav>
 </div>
 
@@ -240,16 +199,15 @@
     <h2>How Flip Scout works</h2>
     <p class="hint">The whole system in one page. Tap ? anytime to get back here.</p>
 
-    <h3 class="help-h">🔍 Deciding whether to buy (Investigate tab)</h3>
-    <ol class="help-list">
-      <li>Type or dictate the item name. Or tap <b>🤖 Copy AI prompt</b>, snap a photo, and let the Claude app identify and price it.</li>
-      <li><b>eBay SOLD comps</b> = receipts, what things actually sold for. <b>Google it</b> = figure out what it even is.</li>
-      <li>Record your decision: <b>Worth buying</b> or <b>Passing</b>, with your max price and one line of why. It's a diary, that's all. Passes count too: next time you see one, Price Book already knows.</li>
-      <li>Actually handed over money? Tap <b>I bought it</b> and it lands in Inventory, pre-filled.</li>
-    </ol>
-
     <h3 class="help-h">🧭 The one-sentence map</h3>
-    <p class="help-p"><b>Investigate</b> = should I buy it? <b>Inventory</b> = I own it. <b>Price Book</b> = what did I decide last time? You can use Inventory's ＋ New item directly for anything you already own; research is optional.</p>
+    <p class="help-p"><b>Inventory</b> = everything you own, what you paid, where it's listed, what it made. <b>Research</b> = an optional helper for the moment before you buy.</p>
+
+    <h3 class="help-h">🔍 Research tab (optional)</h3>
+    <ol class="help-list">
+      <li>Type or dictate the item name, or tap <b>🤖 Copy AI prompt</b>, snap a photo, and let the Claude app identify and price it.</li>
+      <li><b>eBay SOLD comps</b> = receipts, what things actually sold for. <b>Google it</b> = figure out what it even is.</li>
+      <li>Bought it? Tap <b>Bought it → add to Inventory</b> and the item form opens with the name filled in.</li>
+    </ol>
 
     <h3 class="help-h">📦 Stuff you own (Inventory tab)</h3>
     <ol class="help-list">
@@ -266,9 +224,6 @@
       <li>When it sells: <b>💰 Sold…</b> with price, fees, date. Margin and partner payouts compute themselves.</li>
       <li>Item didn't work out? <b>Mark dead</b>. It keeps its number and teaches the stats later.</li>
     </ol>
-
-    <h3 class="help-h">📒 Price book</h3>
-    <p class="help-p">Middle tab. Search anything you've ever investigated. After a month of scouting you'll make buy calls straight from here without opening a single search.</p>
 
     <h3 class="help-h">🔄 The sync pill (top bar)</h3>
     <p class="help-p"><b>synced</b> = everything is in your GitHub repo. <b>2 to sync</b> = captures waiting (normal in dead zones, nothing is lost). Tap the pill to force a sync. Airplane mode is fine: everything saves on the phone and uploads later.</p>

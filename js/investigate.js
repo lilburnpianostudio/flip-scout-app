@@ -1,16 +1,16 @@
-// investigate.js — Quick Investigation + verdict logging (FR-001, FR-002).
-// The garage-sale flow: type it, tap the comps, log buy/pass. Everything reads
-// from cache and writes through the outbox; nothing here blocks on the network.
+// investigate.js — the Research tab (slimmed v17, FLIP-D17).
+// Ben's real workflow: AI identifies, eBay SOLD verifies, then straight into
+// Inventory. No verdict diary, no price book (Ben: "it's an inventory and
+// profit tracker"). Verdict/pricebook code retired 2026-07-17; git history
+// has it if the need ever returns.
 
 import * as gh from './githubStore.js';
 import * as store from './store.js';
-import * as outbox from './outbox.js';
-import { ulid } from './ulid.js';
 import { toast } from './ui.js';
 
 const $ = (id) => document.getElementById(id);
 
-// Fallbacks so the flow works before config ever syncs (offline first run).
+// Fallbacks so links work before config ever syncs (offline first run).
 const DEFAULT_PLATFORMS = [
   { id: 'ebay', label: 'eBay SOLD comps', emoji: '🏷️', urlTemplate: 'https://www.ebay.com/sch/i.html?_nkw={q}&LH_Sold=1&LH_Complete=1' },
   { id: 'google', label: 'Google it', emoji: '🔎', urlTemplate: 'https://www.google.com/search?q={q}' },
@@ -38,12 +38,10 @@ export const dollarsToCents = (s) => {
 export const centsToDollars = (c) => (c === null || c === undefined) ? '' : (c / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
 let platforms = DEFAULT_PLATFORMS;
-let lastSavedVerdictId = null;
 
 async function loadPlatforms() {
   const cached = await store.metaGet('platforms');
   if (cached) platforms = cached;
-  // Background refresh; never awaited by the UI flow.
   gh.readFile('config/platforms.json').then((r) => {
     if (r.ok && r.json.platforms) {
       platforms = r.json.platforms;
@@ -66,63 +64,13 @@ function renderLinks() {
     a.innerHTML = `<span class="le">${p.emoji}</span> ${p.label}`;
     box.appendChild(a);
   });
-  $('verdictCard').hidden = false;
-  $('acquiredRow').hidden = true;
-}
-
-async function saveVerdict(verdict) {
-  const itemName = $('invName').value.trim();
-  if (!itemName) { toast('Item name first'); return; }
-  const maxBuyCents = dollarsToCents($('invMaxBuy').value);
-  if (verdict === 'buy' && maxBuyCents === null) { toast('Max-buy price makes a buy verdict useful'); return; }
-  const id = ulid();
-  const data = {
-    id,
-    itemName,
-    category: $('invCategory').value,
-    verdict,
-    askingCents: dollarsToCents($('invAsking').value),
-    maxBuyCents,
-    reason: $('invReason').value.trim(),
-    locationNote: $('invWhere').value.trim(),
-    createdAt: new Date().toISOString(),
-    promotedToItem: null,
-  };
-  await outbox.enqueueRecord('verdicts', id, data);
-  lastSavedVerdictId = id;
-  toast(verdict === 'buy' ? 'Buy verdict saved 💪' : 'Pass logged, price book grows');
-  if (verdict === 'buy') $('acquiredRow').hidden = false;
-  renderRecent();
-}
-
-async function renderRecent() {
-  const rows = await store.getAll('verdicts');
-  rows.sort((a, b) => (a.data.createdAt < b.data.createdAt ? 1 : -1));
-  const box = $('invRecent');
-  box.innerHTML = '';
-  rows.slice(0, 5).forEach((r) => {
-    const d = r.data;
-    const div = document.createElement('div');
-    div.className = 'recent-row';
-    div.innerHTML = `<b class="${d.verdict === 'buy' ? 'v-buy' : 'v-pass'}">${d.verdict === 'buy' ? 'BUY' : 'PASS'}</b>
-      <span class="rn">${d.itemName}</span>
-      <span class="rp">${d.maxBuyCents !== null ? 'max ' + centsToDollars(d.maxBuyCents) : ''}</span>
-      ${r.pending ? '<span class="rpend">●</span>' : ''}`;
-    box.appendChild(div);
-  });
-}
-
-function clearForm() {
-  ['invName', 'invAsking', 'invMaxBuy', 'invReason', 'invWhere'].forEach((i) => { $(i).value = ''; });
-  $('invLinks').innerHTML = '';
-  $('verdictCard').hidden = true;
-  $('acquiredRow').hidden = true;
-  $('invName').focus();
 }
 
 export function init(showView) {
   loadPlatforms();
   $('btnInvestigate').addEventListener('click', renderLinks);
+  $('invName').addEventListener('keydown', (e) => { if (e.key === 'Enter') renderLinks(); });
+
   $('btnAiPrompt').addEventListener('click', async () => {
     const hint = $('invName').value.trim();
     const prompt = 'I am at a thrift store or garage sale deciding whether to buy this item to resell (photo attached). Tell me: '
@@ -138,21 +86,11 @@ export function init(showView) {
       toast('Could not reach the clipboard, try again');
     }
   });
-  $('invName').addEventListener('keydown', (e) => { if (e.key === 'Enter') renderLinks(); });
-  $('btnVerdictBuy').addEventListener('click', () => saveVerdict('buy'));
-  $('btnVerdictPass').addEventListener('click', () => saveVerdict('pass'));
-  $('btnNewInv').addEventListener('click', clearForm);
-  $('btnAcquired').addEventListener('click', () => {
-    sessionStorage.setItem('fs.pendingAcquire', lastSavedVerdictId || '');
+
+  // The bridge Ben actually uses: research done → new item, name pre-filled.
+  $('btnResearchAdd').addEventListener('click', () => {
+    const name = $('invName').value.trim();
+    if (name) sessionStorage.setItem('fs.prefillName', name);
     showView('inventory');
-    toast('Item records arrive in story 3.1 — verdict is safe in the price book');
   });
-  const sel = $('invCategory');
-  CATEGORIES.forEach(([v, label]) => {
-    const o = document.createElement('option');
-    o.value = v; o.textContent = label;
-    sel.appendChild(o);
-  });
-  renderRecent();
-  window.addEventListener('outbox:change', renderRecent);
 }

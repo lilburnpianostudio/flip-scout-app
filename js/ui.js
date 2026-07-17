@@ -6,14 +6,13 @@ import * as gh from './githubStore.js';
 import * as store from './store.js';
 import * as outbox from './outbox.js';
 import * as investigate from './investigate.js';
-import * as pricebook from './pricebook.js';
 import * as inventory from './inventory.js';
 
 const $ = (id) => document.getElementById(id);
 
 // Bump alongside the sw.js cache version. Shown in the topbar so "what version
 // are you on?" is never a guessing game.
-export const APP_VERSION = 'v16';
+export const APP_VERSION = 'v17';
 
 // ---------- toast ----------
 let toastTimer;
@@ -30,7 +29,7 @@ export function toast(msg) {
 // native long-press → Paste. Inputs stay plain so dictation and long-press work.
 
 // ---------- routing ----------
-const VIEWS = ['investigate', 'pricebook', 'inventory'];
+const VIEWS = ['investigate', 'inventory'];
 function show(view) {
   VIEWS.forEach((v) => { $('view-' + v).hidden = v !== view; });
   document.querySelectorAll('.navbtn').forEach((b) => {
@@ -157,7 +156,6 @@ function boot() {
   });
 
   investigate.init(show);
-  pricebook.init();
   inventory.init();
 
   if (gh.hasToken()) showShell();

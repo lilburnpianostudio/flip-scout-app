@@ -586,6 +586,17 @@ async function advanceStatus(id, next) {
 let pendingVerdictId = null;
 
 async function checkPendingAcquire() {
+  // Research-tab handoff (v17): open a new item with the researched name.
+  const preName = sessionStorage.getItem('fs.prefillName');
+  if (preName) {
+    sessionStorage.removeItem('fs.prefillName');
+    const d = blankItem();
+    d.name = preName;
+    d.category = 'other';
+    d.id = null; // force create path
+    openForm(d);
+    return;
+  }
   const vid = sessionStorage.getItem('fs.pendingAcquire');
   if (!vid) return;
   const v = await store.get('verdicts', vid);
