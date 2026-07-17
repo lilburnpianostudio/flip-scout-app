@@ -3,6 +3,8 @@
 // this story is the explicit sign-in verification.
 
 import * as gh from './githubStore.js';
+import * as store from './store.js';
+import * as outbox from './outbox.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -45,11 +47,20 @@ function show(view) {
   localStorage.setItem('fs.lastView', view);
 }
 
-// ---------- sync pill (real queue arrives in story 1.2) ----------
+// ---------- sync pill (live queue, story 1.2) ----------
 export function setSyncPill(state, label) {
   const p = $('syncPill');
   p.className = 'sync-pill' + (state ? ' ' + state : '');
   p.textContent = label;
+}
+
+async function refreshPill() {
+  const n = await outbox.pendingCount();
+  const err = outbox.getError();
+  if (err) setSyncPill('error', 'sync issue');
+  else if (!navigator.onLine) setSyncPill('pending', n ? `offline · ${n} queued` : 'offline');
+  else if (n > 0) setSyncPill('pending', `${n} to sync`);
+  else setSyncPill('', 'synced');
 }
 
 // ---------- sign-in flow ----------
@@ -65,7 +76,8 @@ function showShell() {
   $('view-signin').hidden = true;
   $('shell').hidden = false;
   show(localStorage.getItem('fs.lastView') || 'investigate');
-  setSyncPill('', navigator.onLine ? 'synced' : 'offline');
+  refreshPill();
+  outbox.sync().then(refreshPill).catch(() => {}); // background, never blocks UI
 
   const days = gh.tokenExpiryDays();
   const warn = $('tokenWarn');
@@ -116,11 +128,13 @@ async function verify() {
   showShell();
 }
 
-function signout() {
+async function signout() {
   if (!confirm('Sign out? This wipes the token and all local data on this device. Your repo data is untouched.')) return;
+  const n = await outbox.pendingCount();
+  if (n > 0 && !confirm(`${n} capture(s) have not synced yet and will be LOST. Sign out anyway?`)) return;
   gh.clearCredentials();
   localStorage.removeItem('fs.lastView');
-  // Story 1.2 adds IndexedDB wipe here alongside the mirror.
+  await store.wipe();
   location.reload();
 }
 
@@ -133,8 +147,18 @@ function boot() {
   $('btnSignout').addEventListener('click', signout);
   wirePasteButtons(document);
 
-  window.addEventListener('online', () => setSyncPill('', 'synced'));
-  window.addEventListener('offline', () => setSyncPill('pending', 'offline'));
+  window.addEventListener('online', () => { outbox.sync().then(refreshPill).catch(() => {}); refreshPill(); });
+  window.addEventListener('offline', refreshPill);
+  window.addEventListener('outbox:change', refreshPill);
+  window.addEventListener('outbox:error', refreshPill);
+  $('syncPill').style.cursor = 'pointer';
+  $('syncPill').addEventListener('click', () => {
+    toast('Syncing…');
+    outbox.sync().then((r) => {
+      refreshPill();
+      toast(r && r.done ? 'Synced' : 'Sync incomplete, will retry');
+    }).catch(() => toast('Sync failed, will retry'));
+  });
 
   if (gh.hasToken()) showShell();
   else showSignin();
