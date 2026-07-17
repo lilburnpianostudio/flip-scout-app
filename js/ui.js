@@ -5,6 +5,7 @@
 import * as gh from './githubStore.js';
 import * as store from './store.js';
 import * as outbox from './outbox.js';
+import * as investigate from './investigate.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -160,6 +161,8 @@ function boot() {
     }).catch(() => toast('Sync failed, will retry'));
   });
 
+  investigate.init(show);
+
   if (gh.hasToken()) showShell();
   else showSignin();
 
@@ -168,4 +171,4 @@ function boot() {
   }
 }
 
-boot();
+if (typeof document !== 'undefined') boot();

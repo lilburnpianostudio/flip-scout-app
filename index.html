@@ -61,9 +61,44 @@
 
   <main id="views">
     <section id="view-investigate" class="view">
-      <div class="card placeholder">
-        <h2>Investigate</h2>
-        <p>Comp searches and buy/pass verdicts land here in story 2.1.</p>
+      <div class="card">
+        <h2>Quick investigation</h2>
+        <label class="field">
+          <span>What are you looking at?</span>
+          <div class="paste-row">
+            <input type="text" id="invName" placeholder="brand + model, e.g. dewalt dw735" autocapitalize="none">
+            <button type="button" class="btn btn-ghost" data-paste="invName">Paste</button>
+          </div>
+        </label>
+        <label class="field">
+          <span>Category</span>
+          <select id="invCategory"></select>
+        </label>
+        <button class="btn btn-primary btn-block" id="btnInvestigate">🔍 Investigate</button>
+        <div class="linkgrid" id="invLinks"></div>
+      </div>
+
+      <div class="card" id="verdictCard" hidden>
+        <h2>Verdict</h2>
+        <div class="tworow">
+          <label class="field"><span>Asking price</span><input type="text" inputmode="decimal" id="invAsking" placeholder="$"></label>
+          <label class="field"><span>My max buy</span><input type="text" inputmode="decimal" id="invMaxBuy" placeholder="$"></label>
+        </div>
+        <label class="field"><span>Why (one line)</span><input type="text" id="invReason" placeholder="sold comps around $80, works great"></label>
+        <label class="field"><span>Where (optional)</span><input type="text" id="invWhere" placeholder="Goodwill Lilburn"></label>
+        <div class="tworow">
+          <button class="btn btn-buy" id="btnVerdictBuy">✅ Buy</button>
+          <button class="btn btn-pass" id="btnVerdictPass">✋ Pass</button>
+        </div>
+        <div class="tworow" id="acquiredRow" hidden>
+          <button class="btn btn-primary btn-block" id="btnAcquired">📦 Acquired → make it an item</button>
+        </div>
+        <button class="btn btn-ghost btn-block" id="btnNewInv" style="margin-top:8px;">New investigation</button>
+      </div>
+
+      <div class="card">
+        <h2>Recent</h2>
+        <div id="invRecent" class="recent"></div>
       </div>
     </section>
     <section id="view-pricebook" class="view" hidden>
