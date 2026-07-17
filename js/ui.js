@@ -176,6 +176,15 @@ function boot() {
 
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});
+    // Self-updating app: when a new version's service worker takes control,
+    // reload once so Ben never has to do the close-twice dance.
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloaded) return;
+      reloaded = true;
+      toast('Updating Flip Scout…');
+      setTimeout(() => location.reload(), 600);
+    });
   }
 }
 
