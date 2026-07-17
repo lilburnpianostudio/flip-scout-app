@@ -125,7 +125,7 @@ async function renderList() {
   const box = $('itemRows');
   box.innerHTML = '';
   if (!rows.length) {
-    box.innerHTML = '<p class="hint">No items yet. Log a buy verdict and tap Acquired, or add one here.</p>';
+    box.innerHTML = '<p class="hint">Nothing here yet. Already own something you want to flip? Tap <b>＋ New item</b> above and just type it in. (Investigate is only for deciding BEFORE you buy.)</p>';
     $('pipeTotals').hidden = true;
     return;
   }
