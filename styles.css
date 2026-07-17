@@ -134,6 +134,16 @@ select {
 .help-list li { margin-bottom: 5px; }
 .help-p { font-size: 14px; color: var(--mid); margin-bottom: 6px; }
 
+/* pipeline */
+.pipe-totals { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.pipe-totals > div { background: var(--paper); border-radius: 10px; padding: 10px 14px; }
+.pipe-totals small { display: block; font-size: 11px; color: var(--mid); }
+.pipe-totals b { font-size: 18px; }
+.pipe-group { font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--mid); font-weight: 700; margin: 16px 0 2px; }
+.ir-days { font-size: 12px; color: var(--mid); font-weight: 700; white-space: nowrap; }
+.pipe-history { margin-top: 16px; }
+.pipe-history summary { font-size: 13px; color: var(--mid); font-weight: 700; cursor: pointer; min-height: var(--tap); display: flex; align-items: center; }
+
 .toast {
   position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); z-index: 60;
   background: var(--ink); color: #fff; font-size: 14px; font-weight: 600;

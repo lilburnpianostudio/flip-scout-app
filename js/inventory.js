@@ -79,33 +79,88 @@ function sub(name) {
   ['invList', 'invForm', 'invDetail'].forEach((s) => { $(s).hidden = s !== name; });
 }
 
-// ---------- list ----------
+// ---------- pipeline list (story 3.3 / FR-005) ----------
 export function flipLabel(d) {
   if (!d.flipId) return '…';
   return d.flipId + (d.idProvisional ? '*' : '');
 }
 
+export function daysIn(sinceIso, now = Date.now()) {
+  if (!sinceIso) return 0;
+  return Math.max(0, Math.floor((now - new Date(sinceIso).getTime()) / 86400000));
+}
+
+// Aggregates, derived on render — never cached (ADR-006).
+export function computeTotals(items) {
+  let investedCents = 0;
+  let realizedCents = 0;
+  items.forEach((d) => {
+    if (d.status === 'sold') {
+      const m = computeMargin(d);
+      if (m !== null) realizedCents += m;
+    } else if (d.status !== 'dead' && d.costCents != null) {
+      investedCents += d.costCents;
+    }
+  });
+  return { investedCents, realizedCents };
+}
+
+function itemRow(r, extra) {
+  const d = r.data;
+  const el = document.createElement('div');
+  el.className = 'item-row';
+  el.innerHTML = `
+    <span class="ir-flip">${flipLabel(d)}</span>
+    <span class="ir-name">${esc(d.name)}${(d.partners && d.partners.length) ? ' <span title="partners on this deal">🤝</span>' : ''}</span>
+    ${extra || ''}
+    ${r.pending ? '<span class="rpend">●</span>' : ''}`;
+  el.addEventListener('click', () => openDetail(d.id));
+  return el;
+}
+
 async function renderList() {
   const rows = await store.getAll('items');
-  rows.sort((a, b) => (a.data.createdAt < b.data.createdAt ? 1 : -1));
   const box = $('itemRows');
   box.innerHTML = '';
   if (!rows.length) {
     box.innerHTML = '<p class="hint">No items yet. Log a buy verdict and tap Acquired, or add one here.</p>';
+    $('pipeTotals').hidden = true;
     return;
   }
-  rows.forEach((r) => {
-    const d = r.data;
-    const el = document.createElement('div');
-    el.className = 'item-row';
-    el.innerHTML = `
-      <span class="ir-flip">${flipLabel(d)}</span>
-      <span class="ir-name">${esc(d.name)}${(d.partners && d.partners.length) ? ' <span title="partners on this deal">🤝</span>' : ''}</span>
-      <span class="status-chip st-${d.status}">${d.status}</span>
-      ${r.pending ? '<span class="rpend">●</span>' : ''}`;
-    el.addEventListener('click', () => openDetail(d.id));
-    box.appendChild(el);
+
+  const totals = computeTotals(rows.map((r) => r.data));
+  $('pipeTotals').hidden = false;
+  $('pipeTotals').innerHTML = `
+    <div><small>tied up in inventory</small><b>${centsToDollars(totals.investedCents)}</b></div>
+    <div><small>realized profit</small><b class="${totals.realizedCents >= 0 ? 'v-buy' : 'v-loss'}">${centsToDollars(totals.realizedCents)}</b></div>`;
+
+  const bySt = { acquired: [], listed: [], scouted: [], sold: [], dead: [] };
+  rows.forEach((r) => (bySt[r.data.status] || bySt.scouted).push(r));
+  Object.values(bySt).forEach((g) => g.sort((a, b) => (a.data.createdAt < b.data.createdAt ? 1 : -1)));
+
+  [['acquired', 'To list'], ['listed', 'Listed, waiting on a buyer'], ['scouted', 'Scouted']].forEach(([st, label]) => {
+    if (!bySt[st].length) return;
+    const h = document.createElement('p');
+    h.className = 'pipe-group';
+    h.textContent = `${label} (${bySt[st].length})`;
+    box.appendChild(h);
+    bySt[st].forEach((r) => {
+      const days = daysIn(r.data.statusChangedAt || r.data.updatedAt || r.data.createdAt);
+      box.appendChild(itemRow(r, `<span class="ir-days">${days}d</span>`));
+    });
   });
+
+  if (bySt.sold.length || bySt.dead.length) {
+    const det = document.createElement('details');
+    det.className = 'pipe-history';
+    det.innerHTML = `<summary>History: ${bySt.sold.length} sold · ${bySt.dead.length} dead</summary>`;
+    bySt.sold.forEach((r) => {
+      const m = computeMargin(r.data);
+      det.appendChild(itemRow(r, `<span class="ir-days ${m >= 0 ? 'v-buy' : 'v-loss'}">${centsToDollars(m)}</span>`));
+    });
+    bySt.dead.forEach((r) => det.appendChild(itemRow(r, '<span class="status-chip st-dead">dead</span>')));
+    box.appendChild(det);
+  }
 }
 
 function esc(s) {
