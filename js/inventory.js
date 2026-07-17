@@ -92,6 +92,21 @@ export function daysIn(sinceIso, now = Date.now()) {
   return Math.max(0, Math.floor((now - new Date(sinceIso).getTime()) / 86400000));
 }
 
+// What Ben owes each partner: payouts summed across SOLD items they were in.
+// (Payment-tracking checkbox comes with story 3.4; until then this is the tab.)
+export function computePartnerTotals(items) {
+  const owed = {};
+  items.forEach((d) => {
+    if (d.status !== 'sold') return;
+    const m = computeMargin(d);
+    if (m === null) return;
+    partnerPayouts(m, d.partners).forEach((p) => {
+      owed[p.name] = (owed[p.name] || 0) + p.payoutCents;
+    });
+  });
+  return owed;
+}
+
 // Aggregates, derived on render — never cached (ADR-006).
 export function computeTotals(items) {
   let investedCents = 0;
@@ -132,9 +147,14 @@ async function renderList() {
 
   const totals = computeTotals(rows.map((r) => r.data));
   $('pipeTotals').hidden = false;
+  const owed = computePartnerTotals(rows.map((r) => r.data));
+  const owedLine = Object.keys(owed).length
+    ? `<div class="owed-line">Partner tab: ${Object.entries(owed).map(([n, c]) => `<b>${esc(n)}</b> ${centsToDollars(c)}`).join(' · ')}</div>`
+    : '';
   $('pipeTotals').innerHTML = `
     <div><small>tied up in inventory</small><b>${centsToDollars(totals.investedCents)}</b></div>
-    <div><small>realized profit</small><b class="${totals.realizedCents >= 0 ? 'v-buy' : 'v-loss'}">${centsToDollars(totals.realizedCents)}</b></div>`;
+    <div><small>realized profit</small><b class="${totals.realizedCents >= 0 ? 'v-buy' : 'v-loss'}">${centsToDollars(totals.realizedCents)}</b></div>
+    ${owedLine}`;
 
   const bySt = { acquired: [], listed: [], scouted: [], sold: [], dead: [] };
   rows.forEach((r) => (bySt[r.data.status] || bySt.scouted).push(r));
@@ -603,6 +623,7 @@ export function init() {
   $('copyPlatform').addEventListener('input', () => { if (!$('copyOut').hidden) generateCopy(); });
   loadShotlists();
   $('btnDetBack').addEventListener('click', () => { sub('invList'); renderList(); });
+  $('btnDetBackTop').addEventListener('click', () => { sub('invList'); renderList(); });
   $('btnDetEdit').addEventListener('click', async () => {
     const r = await store.get('items', detailId);
     if (r) openForm({ ...r.data });

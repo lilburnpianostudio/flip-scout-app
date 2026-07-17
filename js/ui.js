@@ -13,7 +13,7 @@ const $ = (id) => document.getElementById(id);
 
 // Bump alongside the sw.js cache version. Shown in the topbar so "what version
 // are you on?" is never a guessing game.
-export const APP_VERSION = 'v13';
+export const APP_VERSION = 'v14';
 
 // ---------- toast ----------
 let toastTimer;
@@ -68,7 +68,7 @@ function showSignin() {
 function showShell() {
   $('view-signin').hidden = true;
   $('shell').hidden = false;
-  show(localStorage.getItem('fs.lastView') || 'investigate');
+  show(localStorage.getItem('fs.lastView') || 'inventory');
   refreshPill();
   outbox.sync().then(refreshPill).catch(() => {}); // background, never blocks UI
 
