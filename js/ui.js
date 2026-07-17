@@ -11,6 +11,10 @@ import * as inventory from './inventory.js';
 
 const $ = (id) => document.getElementById(id);
 
+// Bump alongside the sw.js cache version. Shown in the topbar so "what version
+// are you on?" is never a guessing game.
+export const APP_VERSION = 'v12';
+
 // ---------- toast ----------
 let toastTimer;
 export function toast(msg) {
@@ -145,6 +149,7 @@ async function signout() {
 // ---------- boot ----------
 function boot() {
   window.__fsBooted = true;
+  document.querySelector('.brand').textContent = 'Flip Scout ' + APP_VERSION;
   document.querySelectorAll('.navbtn').forEach((b) => {
     b.addEventListener('click', () => show(b.dataset.view));
   });
