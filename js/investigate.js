@@ -13,9 +13,8 @@ const $ = (id) => document.getElementById(id);
 // Fallbacks so the flow works before config ever syncs (offline first run).
 const DEFAULT_PLATFORMS = [
   { id: 'ebay', label: 'eBay SOLD comps', emoji: '🏷️', urlTemplate: 'https://www.ebay.com/sch/i.html?_nkw={q}&LH_Sold=1&LH_Complete=1' },
+  { id: 'google', label: 'Google it', emoji: '🔎', urlTemplate: 'https://www.google.com/search?q={q}' },
   { id: 'fbm', label: 'FB Marketplace', emoji: '🛒', urlTemplate: 'https://www.facebook.com/marketplace/search/?query={q}' },
-  { id: 'craigslist', label: 'Craigslist (Atlanta)', emoji: '📰', urlTemplate: 'https://atlanta.craigslist.org/search/sss?query={q}' },
-  { id: 'offerup', label: 'OfferUp (buy side)', emoji: '🤝', urlTemplate: 'https://offerup.com/search?q={q}' },
 ];
 
 export const CATEGORIES = [

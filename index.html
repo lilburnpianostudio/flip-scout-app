@@ -75,7 +75,8 @@
       </div>
 
       <div class="card" id="verdictCard" hidden>
-        <h2>Verdict</h2>
+        <h2>My decision</h2>
+        <p class="hint">This is just a diary of what you decided at the shelf, so future-you remembers. Buy = worth it. Pass = walked away. Both make your Price Book smarter.</p>
         <div class="tworow">
           <label class="field"><span>Asking price</span><input type="text" inputmode="decimal" id="invAsking" placeholder="$"></label>
           <label class="field"><span>My max buy</span><input type="text" inputmode="decimal" id="invMaxBuy" placeholder="$"></label>
@@ -83,11 +84,11 @@
         <label class="field"><span>Why (one line)</span><input type="text" id="invReason" placeholder="sold comps around $80, works great"></label>
         <label class="field"><span>Where (optional)</span><input type="text" id="invWhere" placeholder="Goodwill Lilburn"></label>
         <div class="tworow">
-          <button class="btn btn-buy" id="btnVerdictBuy">✅ Buy</button>
-          <button class="btn btn-pass" id="btnVerdictPass">✋ Pass</button>
+          <button class="btn btn-buy" id="btnVerdictBuy">✅ Worth buying</button>
+          <button class="btn btn-pass" id="btnVerdictPass">✋ Passing</button>
         </div>
         <div class="tworow" id="acquiredRow" hidden>
-          <button class="btn btn-primary btn-block" id="btnAcquired">📦 Acquired → make it an item</button>
+          <button class="btn btn-primary btn-block" id="btnAcquired">📦 I bought it → add to Inventory</button>
         </div>
         <button class="btn btn-ghost btn-block" id="btnNewInv" style="margin-top:8px;">New investigation</button>
       </div>
@@ -239,21 +240,21 @@
     <h2>How Flip Scout works</h2>
     <p class="hint">The whole system in one page. Tap ? anytime to get back here.</p>
 
-    <h3 class="help-h">🔍 At a garage sale (under a minute)</h3>
+    <h3 class="help-h">🔍 Deciding whether to buy (Investigate tab)</h3>
     <ol class="help-list">
-      <li>Investigate tab: type or dictate the item name (mic button on your keyboard works everywhere).</li>
-      <li>Tap Investigate, then tap <b>eBay SOLD comps</b>: those are real prices things actually sold for, not asking prices.</li>
-      <li>Come back, enter your max-buy price and a one-line reason.</li>
-      <li>Tap <b>Buy</b> or <b>Pass</b>. Both are saved: passes build your price book too.</li>
+      <li>Type or dictate the item name. Or tap <b>🤖 Copy AI prompt</b>, snap a photo, and let the Claude app identify and price it.</li>
+      <li><b>eBay SOLD comps</b> = receipts, what things actually sold for. <b>Google it</b> = figure out what it even is.</li>
+      <li>Record your decision: <b>Worth buying</b> or <b>Passing</b>, with your max price and one line of why. It's a diary, that's all. Passes count too: next time you see one, Price Book already knows.</li>
+      <li>Actually handed over money? Tap <b>I bought it</b> and it lands in Inventory, pre-filled.</li>
     </ol>
 
     <h3 class="help-h">🧭 The one-sentence map</h3>
     <p class="help-p"><b>Investigate</b> = should I buy it? <b>Inventory</b> = I own it. <b>Price Book</b> = what did I decide last time? You can use Inventory's ＋ New item directly for anything you already own; research is optional.</p>
 
-    <h3 class="help-h">📦 When you buy something</h3>
+    <h3 class="help-h">📦 Stuff you own (Inventory tab)</h3>
     <ol class="help-list">
-      <li>On the buy verdict, tap <b>Acquired</b>: the item form opens pre-filled. Fix the cost to what you actually paid.</li>
-      <li>It gets a FLIP number. A star (FLIP-0007*) just means the number locks in at next sync.</li>
+      <li>Already own it? Skip research entirely: <b>＋ New item</b>, type it in, done.</li>
+      <li>Every item gets a FLIP number. A star (FLIP-0007*) just means the number locks in at next sync.</li>
       <li>Set your two prices: <b>quick-sale</b> (move it this week) and <b>patient</b> (willing to wait).</li>
       <li>If the girls are in on the deal, add them under Partners: their name, agreed share %, and what cash they put in. The item then shows what each person makes at each price, before you agree.</li>
     </ol>
