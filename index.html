@@ -102,9 +102,19 @@
       </div>
     </section>
     <section id="view-pricebook" class="view" hidden>
-      <div class="card placeholder">
-        <h2>Price Book</h2>
-        <p>Your verdict history and search land here in story 2.2.</p>
+      <div class="card">
+        <h2>Price book <span class="pb-count" id="pbCount"></span></h2>
+        <label class="field">
+          <div class="paste-row">
+            <input type="text" id="pbSearch" placeholder="search item or reason…" autocapitalize="none">
+            <button type="button" class="btn btn-ghost" data-paste="pbSearch">Paste</button>
+          </div>
+        </label>
+        <div class="tworow">
+          <select id="pbCategory"><option value="all">All categories</option></select>
+          <select id="pbVerdict"><option value="all">Buy + Pass</option><option value="buy">Buy only</option><option value="pass">Pass only</option></select>
+        </div>
+        <div id="pbResults" class="pb-list"></div>
       </div>
     </section>
     <section id="view-inventory" class="view" hidden>

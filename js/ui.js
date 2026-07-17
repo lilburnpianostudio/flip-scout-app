@@ -6,6 +6,7 @@ import * as gh from './githubStore.js';
 import * as store from './store.js';
 import * as outbox from './outbox.js';
 import * as investigate from './investigate.js';
+import * as pricebook from './pricebook.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -46,6 +47,7 @@ function show(view) {
     b.classList.toggle('active', b.dataset.view === view);
   });
   localStorage.setItem('fs.lastView', view);
+  window.dispatchEvent(new CustomEvent('view:show', { detail: { view } }));
 }
 
 // ---------- sync pill (live queue, story 1.2) ----------
@@ -163,6 +165,7 @@ function boot() {
   });
 
   investigate.init(show);
+  pricebook.init();
 
   if (gh.hasToken()) showShell();
   else showSignin();

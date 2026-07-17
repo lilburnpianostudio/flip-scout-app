@@ -95,6 +95,17 @@ select {
 .recent-row .rp { color: var(--mid); font-size: 13px; }
 .recent-row .rpend { color: var(--amber); }
 
+/* price book */
+.pb-count { font-size: 12px; color: var(--mid); font-weight: 400; margin-left: 6px; }
+.pb-list { margin-top: 12px; }
+.pb-row { border-bottom: 1px solid #f0ece3; }
+.pb-row:last-child { border-bottom: none; }
+.pb-main { display: flex; align-items: center; gap: 10px; padding: 11px 2px; font-size: 14px; cursor: pointer; min-height: var(--tap); }
+.pb-main .rn { flex: 1; }
+.pb-main .rp { color: var(--mid); font-size: 13px; }
+.pb-date { color: #b5b2ac; font-size: 12px; }
+.pb-detail { padding: 0 2px 12px 44px; font-size: 13.5px; color: var(--mid); }
+
 .toast {
   position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); z-index: 60;
   background: var(--ink); color: #fff; font-size: 14px; font-weight: 600;
