@@ -141,6 +141,7 @@ async function signout() {
 
 // ---------- boot ----------
 function boot() {
+  window.__fsBooted = true;
   document.querySelectorAll('.navbtn').forEach((b) => {
     b.addEventListener('click', () => show(b.dataset.view));
   });

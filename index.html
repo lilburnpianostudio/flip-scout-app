@@ -124,6 +124,18 @@
 
 <div class="toast" id="toast" hidden></div>
 
+<!-- Boot failsafe: if modules fail to load (mid-deploy, bad cache), don't
+     white-screen — offer a reload. ui.js sets __fsBooted when it starts. -->
+<div id="bootFail" hidden style="max-width:320px;margin:80px auto;text-align:center;font-family:-apple-system,sans-serif;">
+  <p style="font-size:15px;color:#6b6a66;margin-bottom:14px;">Flip Scout didn't load right. Usually a refresh fixes it.</p>
+  <button onclick="location.reload(true)" style="min-height:44px;border:none;border-radius:10px;padding:10px 22px;font-size:15px;font-weight:700;background:#14532d;color:#fff;">Reload</button>
+</div>
+<script>
+  setTimeout(function () {
+    if (!window.__fsBooted) document.getElementById('bootFail').hidden = false;
+  }, 4000);
+</script>
+
 <script type="module" src="js/ui.js"></script>
 </body>
 </html>
