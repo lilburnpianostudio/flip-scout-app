@@ -43,6 +43,30 @@ export function benInvested(costCents, partners) {
   return (costCents || 0) - investedTotal(partners);
 }
 
+// ---------- acquisition (FLIP-D21) ----------
+
+// Did Ben actually make a BUYING DECISION on this item?
+//
+// A gifted or already-owned item can still be listed and sold at a profit, and
+// that profit is real money. But it must never count toward the buy hit rate:
+// a $0 gift that sells for $80 is an infinite return on a decision he never
+// made, and mixing those in would flatter the one number meant to tell him
+// whether he is any good at picking.
+//
+// Profit counts. The pick does not. Those are different questions.
+//
+// Items created before this field existed have no `acquisition` and are
+// treated as bought, which is what they were.
+export function isBuy(d) {
+  return !!d && (!d.acquisition || d.acquisition === 'bought');
+}
+
+// Capital at risk. Only bought items tie up money Ben chose to spend, so this
+// is the denominator for return-on-investment; a gift's $0 is not a shrewd buy.
+export function investedCapital(items) {
+  return (items || []).filter(isBuy).reduce((s, d) => s + (d.costCents || 0), 0);
+}
+
 // ---------- margin ----------
 
 // Margin is proceeds minus what the item cost. Unchanged since story 3.2.

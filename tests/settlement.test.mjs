@@ -7,6 +7,7 @@
 import {
   settle, settleSale, freezeSale, frozenPayouts, needsFreeze,
   computeMargin, computePartnerLedger, investedTotal, benInvested,
+  isBuy, investedCapital,
 } from '../js/settlement.js';
 
 let pass = 0;
@@ -224,6 +225,36 @@ const sold = (costCents, priceCents, partners, feesCents = 0) => ({
   is('invested total', investedTotal(ps), 3000);
   is("Ben's stake is the remainder", benInvested(5000, ps), 2000);
   is('over-invested reads negative so the form can warn', benInvested(2000, ps) < 0, true);
+}
+
+// ------------------------------------------------------- acquisition (D21)
+{
+  is('bought is a buy', isBuy({ acquisition: 'bought', costCents: 4500 }), true);
+  is('gifted is not', isBuy({ acquisition: 'gifted', costCents: 0 }), false);
+  is('already owned is not', isBuy({ acquisition: 'owned', costCents: 0 }), false);
+  is('found free is not', isBuy({ acquisition: 'found', costCents: 0 }), false);
+
+  // Every item that existed before the field was added really was bought, so
+  // a missing acquisition must not silently drop items out of the hit rate.
+  is('legacy item with no field counts as bought', isBuy({ costCents: 4500 }), true);
+  is('null is not an item', isBuy(null), false);
+
+  // The point of the whole feature: a gift's $0 never lands in the denominator
+  // that grades Ben's picking, but the item is still tracked and still sells.
+  const items = [
+    { acquisition: 'bought', costCents: 4500 },
+    { acquisition: 'bought', costCents: 6000 },
+    { acquisition: 'gifted', costCents: 0 },
+    { costCents: 6000 },                        // legacy, counts
+  ];
+  is('capital at risk skips the gift', investedCapital(items), 16500);
+  is('and legacy items are still in it', investedCapital([{ costCents: 6000 }]), 6000);
+
+  // A gifted item that sells is pure profit — the money math does not care how
+  // it arrived, only the scoreboard does.
+  const gift = sold(0, 8000, []);
+  is('free item sold is all margin', computeMargin(gift), 8000);
+  is('and Ben keeps all of it', settleSale(gift).benCents, 8000);
 }
 
 // ---------------------------------------------------------------------- report

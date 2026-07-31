@@ -12,7 +12,7 @@ import { generate, generateTitle, FIELD_SETS } from './copywriter.js';
 import {
   sharesTotal, investedTotal, benInvested, computeMargin, settle,
   freezeSale, frozenPayouts, frozenMargin, needsFreeze, computePartnerLedger,
-  paymentsTotal,
+  paymentsTotal, isBuy,
 } from './settlement.js';
 
 const $ = (id) => document.getElementById(id);
@@ -40,6 +40,17 @@ export function previewAt(d, priceCents) {
 const SELL_PLATFORMS = [['fbm', 'FB Marketplace'], ['ebay', 'eBay'], ['offerup', 'OfferUp (existing)']];
 const platformLabel = (id) => (SELL_PLATFORMS.find(([v]) => v === id) || [id, id])[1];
 
+// How the item came in (FLIP-D21). Only 'bought' cost money Ben chose to spend;
+// the other three are $0 by definition, which is what makes a $0 cost readable
+// as "free on purpose" instead of "nobody filled this in."
+export const ACQUISITIONS = [
+  ['bought', 'Bought it'],
+  ['gifted', 'Gifted to us'],
+  ['owned', 'Already had it'],
+  ['found', 'Found it free'],
+];
+const acquisitionLabel = (id) => (ACQUISITIONS.find(([v]) => v === id) || [id, id])[1];
+
 let editingId = null; // ulid of item being edited, null = creating
 
 function blankItem() {
@@ -51,6 +62,7 @@ function blankItem() {
     name: '',
     category: 'other',
     status: 'acquired',
+    acquisition: 'bought',
     source: '',
     costCents: null,
     acquiredAt: now.slice(0, 10),
@@ -202,8 +214,10 @@ function openForm(prefill) {
   const d = prefill || blankItem();
   $('itName').value = d.name || '';
   $('itCategory').value = d.category || 'other';
+  $('itAcquisition').value = d.acquisition || 'bought';
   $('itSource').value = d.source || '';
   $('itCost').value = d.costCents != null ? (d.costCents / 100) : '';
+  syncCostToAcquisition();
   $('itAcquiredAt').value = d.acquiredAt || new Date().toISOString().slice(0, 10);
   $('itQuick').value = d.priceQuickCents != null ? (d.priceQuickCents / 100) : '';
   $('itPatient').value = d.pricePatientCents != null ? (d.pricePatientCents / 100) : '';
@@ -213,6 +227,18 @@ function openForm(prefill) {
   renderPartners();
   $('invFormTitle').textContent = editingId ? `Edit ${flipLabel(d)}` : 'New item';
   sub('invForm');
+}
+
+// A non-bought item cost nothing by definition, so the cost box goes to $0 and
+// locks. That is the whole point of the field: an editable blank reads as
+// "unfilled", a locked $0 reads as "free, and I meant it."
+function syncCostToAcquisition() {
+  const bought = $('itAcquisition').value === 'bought';
+  const cost = $('itCost');
+  cost.disabled = !bought;
+  cost.placeholder = bought ? '$' : 'free';
+  if (!bought) cost.value = '0';
+  warnPartners();
 }
 
 function renderPartners() {
@@ -267,8 +293,10 @@ async function saveForm() {
   const now = new Date().toISOString();
   d.name = name;
   d.category = $('itCategory').value;
+  d.acquisition = $('itAcquisition').value || 'bought';
   d.source = $('itSource').value.trim();
-  d.costCents = dollarsToCents($('itCost').value);
+  // Trust the field, not the disabled input: a non-bought item is $0, full stop.
+  d.costCents = d.acquisition === 'bought' ? dollarsToCents($('itCost').value) : 0;
   d.acquiredAt = $('itAcquiredAt').value || d.acquiredAt;
   d.priceQuickCents = dollarsToCents($('itQuick').value);
   d.pricePatientCents = dollarsToCents($('itPatient').value);
@@ -315,6 +343,9 @@ async function openDetail(id) {
   const rows = [];
   rows.push(['Status', `<span class="status-chip st-${d.status}">${d.status}</span>${d.idProvisional ? ' <small>(number locks at sync)</small>' : ''}`]);
   if (d.costCents != null) rows.push(['Cost', centsToDollars(d.costCents)]);
+  // Only worth a row when it was NOT a buy — "Bought it" is the unremarkable
+  // default and does not need saying on every item.
+  if (!isBuy(d)) rows.push(['How I got it', esc(acquisitionLabel(d.acquisition))]);
   if (d.source) rows.push(['From', esc(d.source)]);
   rows.push(['Acquired', d.acquiredAt || '']);
   if (d.priceQuickCents != null) rows.push(['Quick-sale price', centsToDollars(d.priceQuickCents)]);
@@ -654,6 +685,13 @@ export function init() {
     o.value = v; o.textContent = label;
     sel.appendChild(o);
   });
+  const acq = $('itAcquisition');
+  ACQUISITIONS.forEach(([v, label]) => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = label;
+    acq.appendChild(o);
+  });
+  acq.addEventListener('input', syncCostToAcquisition);
   $('btnNewItem').addEventListener('click', () => openForm(null));
   $('btnAddPartner').addEventListener('click', () => { formPartners.push({ name: '', sharePct: 0, investedCents: null }); renderPartners(); });
   $('itCost').addEventListener('input', warnPartners);
