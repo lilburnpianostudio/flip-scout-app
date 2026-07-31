@@ -12,7 +12,7 @@ import { generate, generateTitle, FIELD_SETS } from './copywriter.js';
 import {
   sharesTotal, investedTotal, benInvested, computeMargin, settle,
   freezeSale, frozenPayouts, frozenMargin, needsFreeze, computePartnerLedger,
-  paymentsTotal, isBuy,
+  paymentsTotal, isBuy, partnerKey,
 } from './settlement.js';
 
 const $ = (id) => document.getElementById(id);
@@ -209,6 +209,27 @@ function esc(s) {
 // ---------- form (create / edit) ----------
 let formPartners = [];
 
+// The partner roster, loaded from config/partners.json in the PRIVATE repo and
+// cached for offline (same pattern as shotlists). It is deliberately not in this
+// file: flip-scout-app is public and these are family names, one of them a kid's.
+// An empty roster is a valid state — the name box just falls back to free text.
+let partnerRoster = [];
+
+function loadPartners() {
+  store.metaGet('partners').then((c) => { if (c && !partnerRoster.length) partnerRoster = c; });
+  gh.readFile('config/partners.json').then((r) => {
+    if (r.ok && Array.isArray(r.json.partners)) {
+      partnerRoster = r.json.partners.filter((p) => p && p.name);
+      store.metaSet('partners', partnerRoster);
+    }
+  }).catch(() => {});
+}
+
+// Trim-insensitive on purpose: at least one live record stores a partner name
+// with a trailing space, and that should show as the roster entry picked rather
+// than as a stranger. Saving trims, so the stray space heals on the next save.
+const rosterHas = (name) => partnerRoster.some((r) => r.name === partnerKey(name));
+
 function openForm(prefill) {
   editingId = prefill && prefill.id ? prefill.id : null;
   const d = prefill || blankItem();
@@ -245,15 +266,55 @@ function renderPartners() {
   const box = $('partnerRows');
   box.innerHTML = '';
   formPartners.forEach((p, i) => {
+    // Free text only when there is no roster to pick from, or when this partner
+    // is a one-off who is not on it. Someone new at a garage sale must never be
+    // blocked by a list that has not been edited yet.
+    const custom = p.other || (!!p.name && partnerRoster.length > 0 && !rosterHas(p.name));
+    const nameCell = partnerRoster.length
+      ? `<select data-pf="pick" data-i="${i}">
+           <option value=""${!p.name && !custom ? ' selected' : ''}>who?</option>
+           ${partnerRoster.map((r) => `<option value="${esc(r.name)}"${r.name === partnerKey(p.name) ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}
+           <option value="__other"${custom ? ' selected' : ''}>Other…</option>
+         </select>`
+      : `<input type="text" placeholder="name" value="${esc(p.name)}" data-pf="name" data-i="${i}">`;
+
     const row = document.createElement('div');
     row.className = 'partner-row';
     row.innerHTML = `
-      <input type="text" placeholder="name" value="${esc(p.name)}" data-pf="name" data-i="${i}">
+      ${nameCell}
       <input type="text" inputmode="numeric" placeholder="%" value="${p.sharePct || ''}" data-pf="sharePct" data-i="${i}">
       <input type="text" inputmode="decimal" placeholder="$ of cost" value="${p.investedCents != null ? p.investedCents / 100 : ''}" data-pf="invested" data-i="${i}">
       <button type="button" class="btn btn-ghost btn-small" data-prm="${i}">✕</button>`;
     box.appendChild(row);
+
+    if (custom && partnerRoster.length) {
+      const extra = document.createElement('div');
+      extra.className = 'partner-custom';
+      extra.innerHTML = `<input type="text" placeholder="name (not on the list)" value="${esc(p.name)}" data-pf="name" data-i="${i}">`;
+      box.appendChild(extra);
+    }
   });
+
+  box.querySelectorAll('select[data-pf=pick]').forEach((sel) => {
+    sel.addEventListener('change', () => {
+      const i = Number(sel.dataset.i);
+      const p = formPartners[i];
+      if (sel.value === '__other') {
+        p.other = true;
+        p.name = '';
+      } else {
+        p.other = false;
+        p.name = sel.value;
+        // Prefill the share the first time a roster name is picked. Never
+        // overwrite a number Ben already typed — the default is a shortcut,
+        // not a rule.
+        const r = partnerRoster.find((x) => x.name === sel.value);
+        if (r && r.defaultShare != null && !p.sharePct) p.sharePct = Number(r.defaultShare) || 0;
+      }
+      renderPartners();
+    });
+  });
+
   box.querySelectorAll('input').forEach((inp) => {
     inp.addEventListener('input', () => {
       const i = Number(inp.dataset.i);
@@ -304,9 +365,12 @@ async function saveForm() {
   d.notes = $('itNotes').value.trim();
   // Trim on the way in as well as on the way out: the name is the ledger key,
   // and a stray trailing space would split one partner into two balances.
+  // `other` is a form-only flag for "typing a name not on the roster" and must
+  // never reach the record — a stray key on a partner row is a stray key in the
+  // ledger forever.
   d.partners = formPartners
     .filter((p) => p.name && p.name.trim())
-    .map((p) => ({ ...p, name: p.name.trim() }));
+    .map(({ other, ...rest }) => ({ ...rest, name: rest.name.trim() }));
   d.updatedAt = now;
 
   if (existing) {
@@ -706,6 +770,7 @@ export function init() {
   $('copyTier').addEventListener('input', () => { $('copyCustom').hidden = $('copyTier').value !== 'custom'; });
   $('copyPlatform').addEventListener('input', () => { if (!$('copyOut').hidden) generateCopy(); });
   loadShotlists();
+  loadPartners();
   $('btnDetBack').addEventListener('click', () => { sub('invList'); renderList(); });
   $('btnDetBackTop').addEventListener('click', () => { sub('invList'); renderList(); });
   $('btnDetEdit').addEventListener('click', async () => {

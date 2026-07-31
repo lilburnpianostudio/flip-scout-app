@@ -120,6 +120,10 @@ select {
 .st-dead { background: #f3f1ec; color: #b5b2ac; }
 .partner-head { display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 600; color: var(--green); margin-bottom: 4px; }
 .partner-row { display: grid; grid-template-columns: 2fr 70px 90px 44px; gap: 8px; margin-bottom: 8px; }
+/* Free-text row, shown only under an "Other…" pick. Full width: a name that is
+   not on the roster is the one most worth seeing clearly before it is saved. */
+.partner-custom { margin: -2px 0 10px; }
+.partner-custom input { width: 100%; }
 .det-row { display: flex; gap: 12px; padding: 8px 0; border-bottom: 1px solid #f0ece3; font-size: 17.5px; }
 .det-row > span { width: 110px; color: var(--mid); flex: none; font-size: 15px; }
 .det-actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
