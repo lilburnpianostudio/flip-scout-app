@@ -202,6 +202,22 @@ const sold = (costCents, priceCents, partners, feesCents = 0) => ({
   is('an advance shows as overpaid, not ignored', computePartnerLedger([d])['Partner A'].owedCents, -500);
 }
 
+// -------------------------------------------- name normalization (ledger key)
+{
+  // Phone entry leaves trailing spaces. One partner must stay one partner.
+  const a = freezeSale(sold(800, 6000, [{ name: 'Ada ', sharePct: 50, investedCents: 0 }]));
+  const b = freezeSale(sold(800, 6000, [{ name: 'Ada', sharePct: 50, investedCents: 0 }]));
+  const led = computePartnerLedger([a, b]);
+  is('trailing space does not split a partner in two', Object.keys(led).length, 1);
+  is('both flips land on one balance', led['Ada'].earnedCents, 5200);
+
+  // And a payment recorded against the untrimmed spelling still clears it.
+  a.payments = [{ id: 'x1', name: 'Ada ', amountCents: 2600 }];
+  b.payments = [{ id: 'x2', name: ' Ada', amountCents: 2600 }];
+  is('payments match across spellings', computePartnerLedger([a, b])['Ada'].owedCents, 0);
+  is('frozen payout rows are keyed trimmed', a.sale.payouts[0].name, 'Ada');
+}
+
 // ------------------------------------------------------------- stake helpers
 {
   const ps = [{ name: 'Partner A', investedCents: 2000 }, { name: 'Partner B', investedCents: 1000 }];

@@ -15,8 +15,18 @@
 
 // ---------- helpers ----------
 
+// Partner NAME IS THE LEDGER KEY, so it is normalized everywhere it is read.
+// Phone entry leaves trailing spaces (seen in real data 2026-07-31); without
+// this, "Ada" and "Ada " are two people owed two separate balances and a
+// partner who has been paid in full never clears off the tab.
+export function partnerKey(name) {
+  return String(name == null ? '' : name).trim();
+}
+
 export function activePartners(partners) {
-  return (partners || []).filter((p) => p && p.name && String(p.name).trim());
+  return (partners || [])
+    .filter((p) => p && partnerKey(p.name))
+    .map((p) => ({ ...p, name: partnerKey(p.name) }));
 }
 
 export function sharesTotal(partners) {
@@ -146,8 +156,9 @@ export function freezeSale(d) {
 // Reversals are negative-amount rows, never edits or deletes, so Ben can
 // always answer "what did I pay her, and when."
 export function paymentsTotal(payments, name) {
+  const key = partnerKey(name);
   return (payments || [])
-    .filter((pm) => pm && pm.name === name)
+    .filter((pm) => pm && partnerKey(pm.name) === key)
     .reduce((s, pm) => s + (Number(pm.amountCents) || 0), 0);
 }
 
@@ -165,7 +176,8 @@ export function computePartnerLedger(items) {
     }
     // A payment counts wherever it was recorded, regardless of item status.
     (d.payments || []).forEach((pm) => {
-      if (pm && pm.name) row(pm.name).paidCents += Number(pm.amountCents) || 0;
+      const key = pm && partnerKey(pm.name);
+      if (key) row(key).paidCents += Number(pm.amountCents) || 0;
     });
   });
 

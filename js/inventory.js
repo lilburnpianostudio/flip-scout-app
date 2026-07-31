@@ -274,7 +274,11 @@ async function saveForm() {
   d.pricePatientCents = dollarsToCents($('itPatient').value);
   d.description = $('itDesc').value.trim();
   d.notes = $('itNotes').value.trim();
-  d.partners = formPartners.filter((p) => p.name && p.name.trim());
+  // Trim on the way in as well as on the way out: the name is the ledger key,
+  // and a stray trailing space would split one partner into two balances.
+  d.partners = formPartners
+    .filter((p) => p.name && p.name.trim())
+    .map((p) => ({ ...p, name: p.name.trim() }));
   d.updatedAt = now;
 
   if (existing) {
