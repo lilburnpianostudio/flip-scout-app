@@ -1,5 +1,5 @@
 // sw.js — app-shell precache so Flip Scout launches offline (ADR-006).
-const CACHE = 'flip-scout-shell-v17';
+const CACHE = 'flip-scout-shell-v18';
 const SHELL = [
   './',
   './index.html',
@@ -11,6 +11,7 @@ const SHELL = [
   './js/ulid.js',
   './js/investigate.js',
   './js/inventory.js',
+  './js/settlement.js',
   './js/copywriter.js',
   './manifest.webmanifest',
 ];

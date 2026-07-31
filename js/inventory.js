@@ -9,6 +9,11 @@ import { toast } from './ui.js';
 import { CATEGORIES, dollarsToCents, centsToDollars } from './investigate.js';
 import * as gh from './githubStore.js';
 import { generate, generateTitle, FIELD_SETS } from './copywriter.js';
+import {
+  sharesTotal, investedTotal, benInvested, computeMargin, settle,
+  freezeSale, frozenPayouts, frozenMargin, needsFreeze, computePartnerLedger,
+  paymentsTotal,
+} from './settlement.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -21,27 +26,15 @@ export const TRANSITIONS = {
   dead: [],
 };
 
-export function sharesTotal(partners) {
-  return (partners || []).reduce((s, p) => s + (Number(p.sharePct) || 0), 0);
-}
-
-// Margin is DERIVED, never stored (architecture §5). Integer-cent math.
-export function computeMargin(d) {
-  if (!d.sale || d.sale.priceCents == null) return null;
-  return d.sale.priceCents - (d.costCents || 0) - (d.sale.feesCents || 0);
-}
-
-// Per-partner payouts from a margin (FR-013): round(margin × share% / 100).
-export function partnerPayouts(marginCents, partners) {
-  return (partners || [])
-    .filter((p) => p.name && Number(p.sharePct) > 0)
-    .map((p) => ({ name: p.name, payoutCents: Math.round(marginCents * Number(p.sharePct) / 100) }));
-}
+// The money math lives in settlement.js — pure, DOM-free, fixture-tested
+// (tests/settlement.test.mjs). Re-exported so the old call sites keep working.
+export { sharesTotal, computeMargin, computePartnerLedger };
 
 // Payout preview for an UNSOLD item at a hypothetical sale price (FLIP-D10).
+// Runs the same settlement as a real close, so the negotiation table promises
+// exactly what the girls will actually be handed — capital back included.
 export function previewAt(d, priceCents) {
-  const margin = priceCents - (d.costCents || 0);
-  return { marginCents: margin, payouts: partnerPayouts(margin, d.partners) };
+  return settle(d.costCents || 0, priceCents, d.partners);
 }
 
 const SELL_PLATFORMS = [['fbm', 'FB Marketplace'], ['ebay', 'eBay'], ['offerup', 'OfferUp (existing)']];
@@ -67,6 +60,7 @@ function blankItem() {
     copyFields: {},
     shotChecks: [],
     partners: [],
+    payments: [],   // append-only settlement record (FLIP-D18)
     priceQuickCents: null,
     pricePatientCents: null,
     notes: '',
@@ -92,34 +86,42 @@ export function daysIn(sinceIso, now = Date.now()) {
   return Math.max(0, Math.floor((now - new Date(sinceIso).getTime()) / 86400000));
 }
 
-// What Ben owes each partner: payouts summed across SOLD items they were in.
-// (Payment-tracking checkbox comes with story 3.4; until then this is the tab.)
-export function computePartnerTotals(items) {
-  const owed = {};
-  items.forEach((d) => {
-    if (d.status !== 'sold') return;
-    const m = computeMargin(d);
-    if (m === null) return;
-    partnerPayouts(m, d.partners).forEach((p) => {
-      owed[p.name] = (owed[p.name] || 0) + p.payoutCents;
-    });
-  });
-  return owed;
-}
-
 // Aggregates, derived on render — never cached (ADR-006).
 export function computeTotals(items) {
   let investedCents = 0;
   let realizedCents = 0;
   items.forEach((d) => {
     if (d.status === 'sold') {
-      const m = computeMargin(d);
+      const m = frozenMargin(d);
       if (m !== null) realizedCents += m;
     } else if (d.status !== 'dead' && d.costCents != null) {
       investedCents += d.costCents;
     }
   });
   return { investedCents, realizedCents };
+}
+
+// ---------- freeze backfill (FLIP-D18) ----------
+// Sales closed before the freeze shipped carry no payouts[]. Settle them once
+// from their partners[] as they stand today and write it in, so from here on
+// the record cannot drift. Runs once per session; a no-op on a repo with no
+// pre-freeze sales, which is the case if this ships before the first sale.
+let backfilled = false;
+async function backfillFrozenSales() {
+  if (backfilled) return;
+  backfilled = true;
+  try {
+    const rows = await store.getAll('items');
+    const stale = rows.filter((r) => needsFreeze(r.data));
+    for (const r of stale) {
+      freezeSale(r.data);
+      r.data.updatedAt = new Date().toISOString();
+      await outbox.enqueueRecord('items', r.data.id, r.data);
+    }
+    if (stale.length) toast(`Locked in payouts on ${stale.length} past sale${stale.length === 1 ? '' : 's'}`);
+  } catch (e) {
+    backfilled = false; // let a later render retry
+  }
 }
 
 function itemRow(r, extra) {
@@ -147,9 +149,12 @@ async function renderList() {
 
   const totals = computeTotals(rows.map((r) => r.data));
   $('pipeTotals').hidden = false;
-  const owed = computePartnerTotals(rows.map((r) => r.data));
-  const owedLine = Object.keys(owed).length
-    ? `<div class="owed-line">Partner tab: ${Object.entries(owed).map(([n, c]) => `<b>${esc(n)}</b> ${centsToDollars(c)}`).join(' · ')}</div>`
+  // Partner tab = earned minus paid (FLIP-D18). Settled partners drop off the
+  // line entirely rather than sitting at $0 forever.
+  const ledger = computePartnerLedger(rows.map((r) => r.data));
+  const open = Object.values(ledger).filter((p) => p.owedCents !== 0);
+  const owedLine = open.length
+    ? `<div class="owed-line">Partner tab: ${open.map((p) => `<b>${esc(p.name)}</b> ${centsToDollars(p.owedCents)}`).join(' · ')}</div>`
     : '';
   $('pipeTotals').innerHTML = `
     <div><small>tied up in inventory</small><b>${centsToDollars(totals.investedCents)}</b></div>
@@ -177,7 +182,7 @@ async function renderList() {
     det.className = 'pipe-history';
     det.innerHTML = `<summary>History: ${bySt.sold.length} sold · ${bySt.dead.length} dead</summary>`;
     bySt.sold.forEach((r) => {
-      const m = computeMargin(r.data);
+      const m = frozenMargin(r.data);
       det.appendChild(itemRow(r, `<span class="ir-days ${m >= 0 ? 'v-buy' : 'v-loss'}">${centsToDollars(m)}</span>`));
     });
     bySt.dead.forEach((r) => det.appendChild(itemRow(r, '<span class="status-chip st-dead">dead</span>')));
@@ -219,7 +224,7 @@ function renderPartners() {
     row.innerHTML = `
       <input type="text" placeholder="name" value="${esc(p.name)}" data-pf="name" data-i="${i}">
       <input type="text" inputmode="numeric" placeholder="%" value="${p.sharePct || ''}" data-pf="sharePct" data-i="${i}">
-      <input type="text" inputmode="decimal" placeholder="$ in" value="${p.investedCents != null ? p.investedCents / 100 : ''}" data-pf="invested" data-i="${i}">
+      <input type="text" inputmode="decimal" placeholder="$ of cost" value="${p.investedCents != null ? p.investedCents / 100 : ''}" data-pf="invested" data-i="${i}">
       <button type="button" class="btn btn-ghost btn-small" data-prm="${i}">✕</button>`;
     box.appendChild(row);
   });
@@ -229,20 +234,29 @@ function renderPartners() {
       if (inp.dataset.pf === 'name') formPartners[i].name = inp.value;
       if (inp.dataset.pf === 'sharePct') formPartners[i].sharePct = parseInt(inp.value, 10) || 0;
       if (inp.dataset.pf === 'invested') formPartners[i].investedCents = dollarsToCents(inp.value);
-      warnShares();
+      warnPartners();
     });
   });
   box.querySelectorAll('[data-prm]').forEach((b) => {
     b.addEventListener('click', () => { formPartners.splice(Number(b.dataset.prm), 1); renderPartners(); });
   });
-  warnShares();
+  warnPartners();
 }
 
-function warnShares() {
-  const total = sharesTotal(formPartners);
+function warnPartners() {
   const w = $('shareWarn');
-  w.hidden = total <= 100;
-  if (total > 100) w.textContent = `Heads up: shares add to ${total}%. Allowed, but that's more than the margin.`;
+  const msgs = [];
+  const total = sharesTotal(formPartners);
+  if (total > 100) msgs.push(`Shares add to ${total}%. Allowed, but that's more than the margin.`);
+  // investedCents is a PORTION of the cost, not money on top of it (FLIP-D19),
+  // so the partners' cash can never add up to more than what the item cost.
+  const cost = dollarsToCents($('itCost').value);
+  const inv = investedTotal(formPartners);
+  if (cost != null && inv > cost) {
+    msgs.push(`Partners put in ${(inv / 100).toFixed(2)} but the item cost ${(cost / 100).toFixed(2)}. Their "$ in" is their share of the cost, not extra money.`);
+  }
+  w.hidden = !msgs.length;
+  w.innerHTML = msgs.map((m) => `Heads up: ${esc(m)}`).join('<br>');
 }
 
 async function saveForm() {
@@ -302,23 +316,35 @@ async function openDetail(id) {
   if (d.priceQuickCents != null) rows.push(['Quick-sale price', centsToDollars(d.priceQuickCents)]);
   if (d.pricePatientCents != null) rows.push(['Patient price', centsToDollars(d.pricePatientCents)]);
   if (d.partners && d.partners.length) {
-    rows.push(['Partners', d.partners.map((p) => `${esc(p.name)} ${p.sharePct || 0}%${p.investedCents != null ? ' (' + centsToDollars(p.investedCents) + ' in)' : ''}`).join('<br>')]);
+    rows.push(['Partners', d.partners.map((p) => `${esc(p.name)} ${p.sharePct || 0}%${p.investedCents ? ' (' + centsToDollars(p.investedCents) + ' of the cost)' : ''}`).join('<br>')]);
+    const mine = benInvested(d.costCents || 0, d.partners);
+    if (investedTotal(d.partners) > 0) rows.push(['My money in', centsToDollars(mine)]);
   }
   if (d.listings && d.listings.length) {
     rows.push(['Listed on', d.listings.map((l) => `${platformLabel(l.platform)} · ${centsToDollars(l.priceCents)} · ${l.listedAt || ''}${l.url ? ` · <a href="${esc(l.url)}" target="_blank" rel="noopener">open</a>` : ''}`).join('<br>')]);
   }
   if (d.sale) {
     rows.push(['Sold', `${platformLabel(d.sale.platform)} · ${centsToDollars(d.sale.priceCents)} · ${d.sale.soldAt || ''}${d.sale.feesCents ? ' · fees ' + centsToDollars(d.sale.feesCents) : ''}`]);
-    const m = computeMargin(d);
+    const m = frozenMargin(d);
     rows.push(['Margin', `<b class="${m >= 0 ? 'v-buy' : 'v-loss'}">${centsToDollars(m)}</b>`]);
-    partnerPayouts(m, d.partners).forEach((p) => rows.push(['→ ' + esc(p.name), centsToDollars(p.payoutCents)]));
+    // Payouts of record, frozen at close (FLIP-D18). Capital return is shown
+    // apart from profit so "your $20 back plus $25" is never one mystery number.
+    frozenPayouts(d).forEach((p) => {
+      const paid = paymentsTotal(d.payments, p.name);
+      const parts = [];
+      if (p.capitalCents) parts.push(`${centsToDollars(p.capitalCents)} of it is her money back`);
+      if (p.capitalCents && p.profitCents) parts.push(`${centsToDollars(p.profitCents)} profit`);
+      if (paid) parts.push(`${centsToDollars(paid)} paid`);
+      rows.push(['→ ' + esc(p.name), `<b>${centsToDollars(p.payoutCents)}</b>${parts.length ? `<br><small>${parts.join(' · ')}</small>` : ''}`]);
+    });
   } else if (d.partners && d.partners.length && d.status !== 'dead') {
-    // Negotiation table (FLIP-D10): what each partner makes at each tier.
+    // Negotiation table (FLIP-D10): what each partner walks away with at each
+    // tier — the same settlement that will run at close, not a rosier version.
     const tiers = [['quick', d.priceQuickCents], ['patient', d.pricePatientCents]].filter(([, c]) => c != null);
     tiers.forEach(([label, cents]) => {
       const pv = previewAt(d, cents);
       const lines = [`margin ${centsToDollars(pv.marginCents)}`]
-        .concat(pv.payouts.map((p) => `${esc(p.name)} makes ${centsToDollars(p.payoutCents)}`));
+        .concat(pv.payouts.map((p) => `${esc(p.name)} walks with ${centsToDollars(p.payoutCents)}`));
       rows.push([`If sold ${label} (${centsToDollars(cents)})`, lines.join('<br>')]);
     });
   }
@@ -558,11 +584,15 @@ async function saveSale() {
     soldAt: $('saDate').value || now.slice(0, 10),
     feesCents: dollarsToCents($('saFees').value) || 0,
   };
+  // FREEZE POINT (FLIP-D18). Settle now and write the numbers onto the sale.
+  // Everything downstream reads these, so editing shares later cannot rewrite
+  // a payout that has already been agreed to or handed over.
+  freezeSale(r.data);
   r.data.status = 'sold';
   r.data.statusChangedAt = now;
   r.data.updatedAt = now;
   await outbox.enqueueRecord('items', detailId, r.data);
-  const m = computeMargin(r.data);
+  const m = r.data.sale.marginCents;
   toast(`Sold! Margin ${centsToDollars(m)} 🎉`);
   openDetail(detailId);
   renderList();
@@ -622,6 +652,7 @@ export function init() {
   });
   $('btnNewItem').addEventListener('click', () => openForm(null));
   $('btnAddPartner').addEventListener('click', () => { formPartners.push({ name: '', sharePct: 0, investedCents: null }); renderPartners(); });
+  $('itCost').addEventListener('input', warnPartners);
   $('btnItemSave').addEventListener('click', saveForm);
   $('btnItemCancel').addEventListener('click', () => sub('invList'));
   $('btnLiSave').addEventListener('click', saveListing);
@@ -640,10 +671,10 @@ export function init() {
     if (r) openForm({ ...r.data });
   });
   window.addEventListener('view:show', (e) => {
-    if (e.detail.view === 'inventory') { renderList(); checkPendingAcquire(); }
+    if (e.detail.view === 'inventory') { backfillFrozenSales().then(renderList); checkPendingAcquire(); }
   });
   window.addEventListener('outbox:change', () => {
     if (!$('view-inventory').hidden && !$('invList').hidden) renderList();
   });
-  renderList();
+  backfillFrozenSales().then(renderList);
 }
