@@ -120,6 +120,34 @@
         </div>
       </div>
 
+      <div id="invSettle" hidden>
+        <div class="card">
+          <button class="btn btn-ghost btn-small" id="btnSettleBack">← Back</button>
+          <h2 id="settleTitle" style="margin-top:8px;"></h2>
+          <p class="hint">Tick what you're paying her for. She gets her own money back first, then her share of the profit — the receipt shows both separately.</p>
+          <div id="settleRows"></div>
+          <div id="settlePayWrap" hidden>
+            <div class="tworow">
+              <label class="field"><span>Paid how</span>
+                <select id="seMethod">
+                  <option value="cash">Cash</option>
+                  <option value="venmo">Venmo</option>
+                  <option value="other">Other</option>
+                </select>
+              </label>
+              <label class="field"><span>Date paid</span><input type="date" id="seDate"></label>
+            </div>
+            <button class="btn btn-buy btn-block" id="btnSettlePay">Mark paid</button>
+          </div>
+          <div id="settleReceipt" hidden>
+            <p class="pipe-group">Receipt <button type="button" class="btn btn-ghost btn-small" id="btnCopyReceipt">Copy</button></p>
+            <p class="copy-text" id="settleReceiptOut"></p>
+            <textarea id="settleFallback" hidden rows="4"></textarea>
+          </div>
+          <button class="btn btn-ghost btn-block" id="btnSettleDone" style="margin-top:10px;">← Back to inventory</button>
+        </div>
+      </div>
+
       <div id="invDetail" hidden>
         <div class="card">
           <button class="btn btn-ghost btn-small" id="btnDetBackTop">← Back</button>
@@ -226,6 +254,14 @@
       <li>On the item, tap <b>＋ Add listing</b>: pick the platform, tap a price tier, done.</li>
       <li>When it sells: <b>💰 Sold…</b> with price, fees, date. Margin and partner payouts compute themselves.</li>
       <li>Item didn't work out? <b>Mark dead</b>. It keeps its number and teaches the stats later.</li>
+    </ol>
+
+    <h3 class="help-h">🤝 Paying the girls</h3>
+    <ol class="help-list">
+      <li>After something sells, the <b>Partner tab</b> on the Inventory screen shows who is owed what. Tap a name to settle up.</li>
+      <li>Tick the items you're paying for, pick cash or Venmo, tap <b>Mark paid</b>. The tab drops by that much, and a partner paid in full disappears from it.</li>
+      <li>You get a <b>receipt</b> you can copy and text her. It lists her money back and her profit as separate lines, so she can check it herself.</li>
+      <li>Payments are only ever added, never erased — so "what did I pay her, and when" always has an answer. Paid the wrong amount? Tell Larry and he'll log a correction.</li>
     </ol>
 
     <h3 class="help-h">🔄 The sync pill (top bar)</h3>

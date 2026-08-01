@@ -8,6 +8,7 @@ import {
   settle, settleSale, freezeSale, frozenPayouts, needsFreeze,
   computeMargin, computePartnerLedger, investedTotal, benInvested,
   isBuy, investedCapital,
+  partnerItemLedger, buildPayout, formatReceipt,
 } from '../js/settlement.js';
 
 let pass = 0;
@@ -255,6 +256,177 @@ const sold = (costCents, priceCents, partners, feesCents = 0) => ({
   const gift = sold(0, 8000, []);
   is('free item sold is all margin', computeMargin(gift), 8000);
   is('and Ben keeps all of it', settleSale(gift).benCents, 8000);
+}
+
+// ------------------------------------------------------- settle-up (Stage 2)
+// The per-item ledger, the payout group, and the receipt text. Names are
+// placeholders; the real ones live in the private repo.
+
+// A sold item with everything the receipt needs hanging off it.
+const item = (id, flipId, name, costCents, priceCents, partners, soldAt = '2026-08-01') => {
+  const d = { id, flipId, name, status: 'sold', costCents, partners, payments: [],
+              sale: { platform: 'fbm', priceCents, feesCents: 0, soldAt } };
+  freezeSale(d);
+  return d;
+};
+
+// Apply a payout the way inventory.js does: append, never edit.
+const apply = (items, payout) => {
+  payout.payments.forEach((p) => {
+    const d = items.find((x) => x.id === p.itemId);
+    if (d) d.payments.push(p.payment);
+  });
+};
+
+// FLIP-0003's real shape: $60 item, partner fronted $30 of it at 50%, sells
+// $250. These are the numbers NEXT-STEPS.md promises out loud.
+const austin = () => item('i3', 'FLIP-0003', 'Austin Electric', 6000, 25000,
+  [{ name: 'Partner A', sharePct: 50, investedCents: 3000 }]);
+
+{
+  const items = [austin(), item('i1', 'FLIP-0001', 'Fender DG8S', 4500, 14000, [])];
+  const rows = partnerItemLedger(items, 'Partner A');
+  is('per-item ledger: only items she has a stake in', rows.length, 1);
+  is('per-item ledger: owed is the full payout', rows[0].owedCents, 12500);
+  is('per-item ledger: $30 of it is capital', rows[0].capitalCents, 3000);
+  is('per-item ledger: $95 of it is profit', rows[0].profitCents, 9500);
+  is('per-item ledger: carries the item identity for the receipt', rows[0].flipId, 'FLIP-0003');
+  is('per-item ledger totals match the global ledger',
+    rows.reduce((s, r) => s + r.owedCents, 0),
+    computePartnerLedger(items)['Partner A'].owedCents);
+}
+
+{
+  // An unsold item with a partner on it is a promise, not a debt.
+  const unsold = { id: 'i9', flipId: 'FLIP-0009', name: 'Not sold yet', status: 'acquired',
+                   costCents: 6000, partners: [{ name: 'Partner A', sharePct: 50, investedCents: 3000 }], payments: [] };
+  is('nothing is owed on an unsold item', partnerItemLedger([unsold], 'Partner A').length, 0);
+}
+
+{
+  // The live trailing-space record (FLIP-0003 stores "Kaitlin "). If this ever
+  // fails, a partner who has been paid in full never clears off the tab.
+  const d = item('i3', 'FLIP-0003', 'Austin Electric', 6000, 25000,
+    [{ name: 'Partner A ', sharePct: 50, investedCents: 3000 }]);
+  is('trailing space in the stored name still finds her items',
+    partnerItemLedger([d], 'Partner A').length, 1);
+}
+
+{
+  // Paid in full: balance goes to zero and she drops off the partner tab.
+  const items = [austin()];
+  const rows = partnerItemLedger(items, 'Partner A');
+  const payout = buildPayout('Partner A', rows, { payoutId: 'PO1', paidAt: '2026-08-05', method: 'venmo', nextId: () => 'PM1' });
+  is('payout total is what she was owed', payout.totalCents, 12500);
+  is('one payment row per item', payout.payments.length, 1);
+  is('the payment carries the group id', payout.payments[0].payment.payoutId, 'PO1');
+  apply(items, payout);
+  is('paid in full reads $0 owed', partnerItemLedger(items, 'Partner A')[0].owedCents, 0);
+  is('and she is off the partner tab',
+    computePartnerLedger(items)['Partner A'].owedCents, 0);
+  is('the earning is still on the record', partnerItemLedger(items, 'Partner A')[0].earnedCents, 12500);
+}
+
+{
+  // Two sold items, settle only one. The other stays outstanding.
+  const items = [
+    austin(),
+    item('i5', 'FLIP-0005', 'Chess set', 800, 6000, [{ name: 'Partner A', sharePct: 50, investedCents: 0 }], '2026-08-09'),
+  ];
+  const rows = partnerItemLedger(items, 'Partner A');
+  is('oldest sale sorts first', rows[0].flipId, 'FLIP-0003');
+  const payout = buildPayout('Partner A', [rows[0]], { payoutId: 'PO2', paidAt: '2026-08-10', nextId: () => 'PM2' });
+  is('partial settlement pays only the chosen item', payout.totalCents, 12500);
+  apply(items, payout);
+  is('the unpaid item is still owed', computePartnerLedger(items)['Partner A'].owedCents, 2600);
+}
+
+{
+  // A row with nothing outstanding must never become a payment.
+  const rows = [{ itemId: 'a', owedCents: 0 }, { itemId: 'b', owedCents: -500 }, { itemId: 'c', owedCents: 100 }];
+  const payout = buildPayout('Partner A', rows, { payoutId: 'PO3', nextId: () => 'PM3' });
+  is('zero and negative rows are never paid', payout.payments.length, 1);
+  is('only the outstanding amount is written', payout.totalCents, 100);
+}
+
+{
+  // A reversal is a negative payment, never a delete, so the debt comes back.
+  const items = [austin()];
+  apply(items, buildPayout('Partner A', partnerItemLedger(items, 'Partner A'),
+    { payoutId: 'PO4', paidAt: '2026-08-05', nextId: () => 'PM4' }));
+  items[0].payments.push({ id: 'PM5', name: 'Partner A', amountCents: -12500, paidAt: '2026-08-06', payoutId: 'PO5' });
+  is('a reversal puts the balance back', partnerItemLedger(items, 'Partner A')[0].owedCents, 12500);
+}
+
+// ------------------------------------------------------------- receipt text
+{
+  const items = [austin()];
+  const payout = buildPayout('Partner A', partnerItemLedger(items, 'Partner A'),
+    { payoutId: 'PO6', paidAt: '2026-08-05', method: 'venmo', methodLabel: 'Venmo', nextId: () => 'PM6' });
+  is('receipt reads exactly as promised', formatReceipt(payout), [
+    'Partner A — 2026-08-05',
+    '',
+    'FLIP-0003 Austin Electric',
+    '  sold $250.00, margin $190.00',
+    '  your $30.00 back',
+    '  50% of the profit: $95.00',
+    '  → $125.00',
+    '',
+    'Total: $125.00 · Venmo',
+  ].join('\n'));
+}
+
+{
+  // Capital and profit are separate lines (FLIP-D22) — never one number.
+  const items = [austin()];
+  const text = formatReceipt(buildPayout('Partner A', partnerItemLedger(items, 'Partner A'),
+    { payoutId: 'PO7', paidAt: '2026-08-05', nextId: () => 'PM7' }));
+  is('capital is its own line', text.includes('your $30.00 back'), true);
+  is('profit is its own line', text.includes('50% of the profit: $95.00'), true);
+  is('the two are never merged', text.includes('$125.00 profit'), false);
+}
+
+{
+  // Break-even: capital back only, so there is one component and no total line
+  // repeating the same number.
+  const d = item('i7', 'FLIP-0007', 'Break-even amp', 3000, 3000,
+    [{ name: 'Partner A', sharePct: 50, investedCents: 2000 }]);
+  const text = formatReceipt(buildPayout('Partner A', partnerItemLedger([d], 'Partner A'),
+    { payoutId: 'PO8', paidAt: '2026-08-05', nextId: () => 'PM8' }));
+  is('capital-only receipt has no redundant arrow total', text.includes('→'), false);
+  is('capital-only receipt still totals', text.includes('Total: $20.00'), true);
+}
+
+{
+  // Part-paid item: the frozen breakdown no longer adds to what is left, so the
+  // receipt shows the subtraction rather than a number that looks wrong.
+  const items = [austin()];
+  items[0].payments.push({ id: 'PM9', name: 'Partner A', amountCents: 5000, paidAt: '2026-08-02', payoutId: 'PO9' });
+  const rows = partnerItemLedger(items, 'Partner A');
+  is('part-paid leaves the remainder', rows[0].owedCents, 7500);
+  const text = formatReceipt(buildPayout('Partner A', rows, { payoutId: 'PO10', paidAt: '2026-08-05', nextId: () => 'PM10' }));
+  is('receipt shows what was already paid', text.includes('less already paid: $50.00'), true);
+  is('receipt totals the remainder', text.includes('  → $75.00'), true);
+}
+
+{
+  // Two items in one settlement = one payoutId group = one receipt.
+  const items = [
+    austin(),
+    item('i5', 'FLIP-0005', 'Chess set', 800, 6000, [{ name: 'Partner A', sharePct: 50, investedCents: 0 }], '2026-08-09'),
+  ];
+  let n = 0;
+  const payout = buildPayout('Partner A', partnerItemLedger(items, 'Partner A'),
+    { payoutId: 'PO11', paidAt: '2026-08-10', methodLabel: 'Cash', nextId: () => 'PM' + (++n) });
+  is('two items, one group', payout.payments.every((p) => p.payoutId === payout.payoutId || p.payment.payoutId === 'PO11'), true);
+  is('two items, distinct payment ids', payout.payments[0].payment.id !== payout.payments[1].payment.id, true);
+  is('grouped total', payout.totalCents, 15100);
+  const text = formatReceipt(payout);
+  is('both items appear', text.includes('FLIP-0003') && text.includes('FLIP-0005'), true);
+  is('grouped receipt totals once', text.includes('Total: $151.00 · Cash'), true);
+  apply(items, payout);
+  is('settling the group clears her entirely',
+    computePartnerLedger(items)['Partner A'].owedCents, 0);
 }
 
 // ---------------------------------------------------------------------- report

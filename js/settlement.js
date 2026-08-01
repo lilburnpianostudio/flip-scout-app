@@ -208,3 +208,140 @@ export function computePartnerLedger(items) {
   Object.values(rows).forEach((r) => { r.owedCents = r.earnedCents - r.paidCents; });
   return rows;
 }
+
+// ---------- settle-up (Stage 2, FLIP-D22) ----------
+
+// This file imports nothing, so it carries its own formatter rather than
+// reaching into investigate.js. Same output as the app's centsToDollars on
+// purpose: a receipt that formats money differently from the screen it came
+// from reads like a different number.
+function money(cents) {
+  return ((cents || 0) / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+}
+
+// computePartnerLedger answers "what do I owe her." This answers "on which
+// items," which is what a settle-up screen and a receipt both need — one
+// balance is not a thing you can hand someone and have them recognise.
+//
+// Rows carry everything a receipt line needs, so nothing downstream has to go
+// back to the item record.
+export function partnerItemLedger(items, name) {
+  const key = partnerKey(name);
+  const rows = [];
+
+  (items || []).forEach((d) => {
+    if (!d) return;
+    let earned = 0, capital = 0, profit = 0, sharePct = 0, hasPayout = false;
+    if (d.status === 'sold') {
+      frozenPayouts(d).forEach((p) => {
+        if (partnerKey(p.name) !== key) return;
+        hasPayout = true;
+        earned += p.payoutCents || 0;
+        capital += p.capitalCents || 0;
+        profit += p.profitCents || 0;
+        sharePct += Number(p.sharePct) || 0;
+      });
+    }
+    const paid = paymentsTotal(d.payments, key);
+    // A payment with no matching payout still belongs here — that is how a
+    // reversal, or a payment recorded against the wrong item, stays visible
+    // instead of quietly unbalancing the total against computePartnerLedger.
+    if (!hasPayout && paid === 0) return;
+
+    rows.push({
+      itemId: d.id,
+      flipId: d.flipId || null,
+      itemName: d.name || '',
+      soldAt: (d.sale && d.sale.soldAt) || null,
+      salePriceCents: (d.sale && d.sale.priceCents != null) ? d.sale.priceCents : null,
+      marginCents: hasPayout ? frozenMargin(d) : null,
+      sharePct,
+      capitalCents: capital,
+      profitCents: profit,
+      earnedCents: earned,
+      paidCents: paid,
+      owedCents: earned - paid,
+    });
+  });
+
+  // Oldest sale first: money owed longest gets settled first, and a receipt
+  // listing three items should read in the order they happened.
+  rows.sort((a, b) => {
+    const ad = a.soldAt || '9999-99-99';
+    const bd = b.soldAt || '9999-99-99';
+    if (ad !== bd) return ad < bd ? -1 : 1;
+    return String(a.flipId || '') < String(b.flipId || '') ? -1 : 1;
+  });
+  return rows;
+}
+
+// One settlement across several items becomes ONE payoutId group — that group
+// is the receipt (FLIP-D18). Payments are append-only rows; this never edits or
+// clears anything, so the ledger stays a history rather than a current state.
+//
+// ID generation is passed in rather than imported, because this module stays
+// pure and DOM-free so node can run the fixtures against it.
+export function buildPayout(name, rows, opts) {
+  const o = opts || {};
+  const key = partnerKey(name);
+  const payoutId = o.payoutId || '';
+  const paidAt = o.paidAt || '';
+  const method = o.method || '';
+  const nextId = typeof o.nextId === 'function' ? o.nextId : () => '';
+
+  // Only ever pay what is actually outstanding. A zero or negative row would
+  // write a payment that makes the balance wrong in the other direction.
+  const lines = (rows || []).filter((r) => r && r.owedCents > 0);
+
+  return {
+    payoutId,
+    name: key,
+    paidAt,
+    method,
+    methodLabel: o.methodLabel || '',
+    lines,
+    totalCents: lines.reduce((s, r) => s + r.owedCents, 0),
+    payments: lines.map((r) => ({
+      itemId: r.itemId,
+      payment: {
+        id: nextId(),
+        name: key,
+        amountCents: r.owedCents,
+        paidAt,
+        method,
+        payoutId,
+        note: o.note || '',
+      },
+    })),
+  };
+}
+
+// The thing Ben actually hands over. Capital and profit are SEPARATE LINES
+// (FLIP-D22) — "your $30 back" then "$95 profit", never one number she has to
+// take on faith. The whole point of the app is that she can check the math.
+export function formatReceipt(payout) {
+  if (!payout || !payout.lines || !payout.lines.length) return '';
+  const out = [`${payout.name}${payout.paidAt ? ' — ' + payout.paidAt : ''}`, ''];
+
+  payout.lines.forEach((r) => {
+    out.push(`${r.flipId ? r.flipId + ' ' : ''}${r.itemName}`.trim());
+    if (r.salePriceCents != null) out.push(`  sold ${money(r.salePriceCents)}, margin ${money(r.marginCents)}`);
+
+    const parts = [];
+    if (r.capitalCents) parts.push(`  your ${money(r.capitalCents)} back`);
+    if (r.profitCents) parts.push(`  ${r.sharePct ? r.sharePct + '% of the profit: ' : 'profit: '}${money(r.profitCents)}`);
+    // A part-paid item's frozen breakdown no longer adds up to what is left, so
+    // the receipt shows the subtraction rather than a number that looks wrong.
+    if (r.paidCents > 0) parts.push(`  less already paid: ${money(r.paidCents)}`);
+    else if (r.paidCents < 0) parts.push(`  plus a reversal: ${money(-r.paidCents)}`);
+    parts.forEach((p) => out.push(p));
+
+    // With a single component the line IS the amount; repeating it as a total
+    // would just be the same number twice.
+    if (parts.length > 1) out.push(`  → ${money(r.owedCents)}`);
+    out.push('');
+  });
+
+  out.push(`Total: ${money(payout.totalCents)}${payout.methodLabel ? ' · ' + payout.methodLabel : ''}`);
+  return out.join('\n');
+}

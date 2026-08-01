@@ -13,6 +13,7 @@ import {
   sharesTotal, investedTotal, benInvested, computeMargin, settle,
   freezeSale, frozenPayouts, frozenMargin, needsFreeze, computePartnerLedger,
   paymentsTotal, isBuy, partnerKey,
+  partnerItemLedger, buildPayout, formatReceipt,
 } from './settlement.js';
 
 const $ = (id) => document.getElementById(id);
@@ -84,7 +85,7 @@ function blankItem() {
 
 // ---------- subview plumbing ----------
 function sub(name) {
-  ['invList', 'invForm', 'invDetail'].forEach((s) => { $(s).hidden = s !== name; });
+  ['invList', 'invForm', 'invDetail', 'invSettle'].forEach((s) => { $(s).hidden = s !== name; });
 }
 
 // ---------- pipeline list (story 3.3 / FR-005) ----------
@@ -165,13 +166,18 @@ async function renderList() {
   // line entirely rather than sitting at $0 forever.
   const ledger = computePartnerLedger(rows.map((r) => r.data));
   const open = Object.values(ledger).filter((p) => p.owedCents !== 0);
+  // Each name is a button into the settle-up screen. The balance was never the
+  // useful part on its own — paying it is.
   const owedLine = open.length
-    ? `<div class="owed-line">Partner tab: ${open.map((p) => `<b>${esc(p.name)}</b> ${centsToDollars(p.owedCents)}`).join(' · ')}</div>`
+    ? `<div class="owed-line">Partner tab: ${open.map((p) => `<button type="button" class="owed-chip" data-settle="${esc(p.name)}"><b>${esc(p.name)}</b> ${centsToDollars(p.owedCents)}</button>`).join(' ')}<small>tap a name to settle up</small></div>`
     : '';
   $('pipeTotals').innerHTML = `
     <div><small>tied up in inventory</small><b>${centsToDollars(totals.investedCents)}</b></div>
     <div><small>realized profit</small><b class="${totals.realizedCents >= 0 ? 'v-buy' : 'v-loss'}">${centsToDollars(totals.realizedCents)}</b></div>
     ${owedLine}`;
+  $('pipeTotals').querySelectorAll('[data-settle]').forEach((b) => {
+    b.addEventListener('click', () => openSettle(b.dataset.settle));
+  });
 
   const bySt = { acquired: [], listed: [], scouted: [], sold: [], dead: [] };
   rows.forEach((r) => (bySt[r.data.status] || bySt.scouted).push(r));
@@ -483,13 +489,15 @@ async function openDetail(id) {
 }
 
 // ---------- listing copy (story 4.2 / FR-006, FR-014) ----------
-async function copyToClipboard(text, btn) {
+// fallbackId names the textarea to fall back into: it has to be one that is
+// actually on screen, or the "text is selected below" message points at nothing.
+async function copyToClipboard(text, btn, fallbackId = 'copyFallback') {
   try {
     await navigator.clipboard.writeText(text);
     toast('Copied ✓ paste it in the app');
   } catch (e) {
     // Fallback: selected textarea + one more tap (older Safari states).
-    const ta = $('copyFallback');
+    const ta = $(fallbackId);
     ta.hidden = false;
     ta.value = text;
     ta.focus();
@@ -702,6 +710,117 @@ async function saveSale() {
   renderList();
 }
 
+// ---------- settle up (Stage 2, FLIP-D18 / FLIP-D22) ----------
+// Recording the payout is the half of "owed" that Stage 1 could not do: the
+// math knew what she was owed, but there was no way to say you had paid her,
+// so the balance could only ever grow.
+
+let settleName = null;
+let settleRows = [];
+let settleChecked = new Set();
+
+async function loadSettleRows() {
+  const rows = await store.getAll('items');
+  settleRows = partnerItemLedger(rows.map((r) => r.data), settleName);
+  // Default to paying everything outstanding — settling one item out of three
+  // is the exception, not the normal case.
+  settleChecked = new Set(settleRows.filter((r) => r.owedCents > 0).map((r) => r.itemId));
+  renderSettleRows();
+}
+
+async function openSettle(name) {
+  settleName = partnerKey(name);
+  $('settleTitle').textContent = `Settle up with ${settleName}`;
+  $('seDate').value = new Date().toISOString().slice(0, 10);
+  $('settleReceipt').hidden = true;
+  $('settleFallback').hidden = true;
+  await loadSettleRows();
+  sub('invSettle');
+}
+
+function renderSettleRows() {
+  const box = $('settleRows');
+  const payable = settleRows.filter((r) => r.owedCents > 0);
+  $('settlePayWrap').hidden = !payable.length;
+
+  if (!settleRows.length) {
+    box.innerHTML = `<p class="hint">Nothing on the books for ${esc(settleName)} yet. Her share appears here once an item she is in on actually sells.</p>`;
+    return;
+  }
+
+  box.innerHTML = settleRows.map((r) => {
+    const head = `${esc(r.flipId || '')} ${esc(r.itemName)}`.trim();
+    if (r.owedCents <= 0) {
+      // Kept on screen rather than hidden: "I already paid you for that one" is
+      // the most useful thing this list can tell either of them.
+      return `<div class="settle-row settled"><span class="sr-main">${head}<br><small>${r.paidCents ? centsToDollars(r.paidCents) + ' paid' : 'nothing owed'}</small></span><b>✓</b></div>`;
+    }
+    const bits = [];
+    if (r.capitalCents) bits.push(`${centsToDollars(r.capitalCents)} of it is her money back`);
+    if (r.profitCents) bits.push(`${centsToDollars(r.profitCents)} profit`);
+    if (r.paidCents > 0) bits.push(`${centsToDollars(r.paidCents)} already paid`);
+    return `<label class="settle-row">
+      <input type="checkbox" data-settle-item="${esc(r.itemId)}"${settleChecked.has(r.itemId) ? ' checked' : ''}>
+      <span class="sr-main">${head}<br><small>${bits.join(' · ')}</small></span>
+      <b>${centsToDollars(r.owedCents)}</b></label>`;
+  }).join('');
+
+  box.querySelectorAll('input[data-settle-item]').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      if (cb.checked) settleChecked.add(cb.dataset.settleItem);
+      else settleChecked.delete(cb.dataset.settleItem);
+      updateSettleTotal();
+    });
+  });
+  updateSettleTotal();
+}
+
+function chosenRows() {
+  return settleRows.filter((r) => settleChecked.has(r.itemId) && r.owedCents > 0);
+}
+
+function updateSettleTotal() {
+  const total = chosenRows().reduce((s, r) => s + r.owedCents, 0);
+  const btn = $('btnSettlePay');
+  btn.textContent = total ? `Mark ${centsToDollars(total)} paid` : 'Mark paid';
+  btn.disabled = !total;
+}
+
+async function doSettle() {
+  const chosen = chosenRows();
+  if (!chosen.length) { toast('Tick at least one item'); return; }
+  const total = chosen.reduce((s, r) => s + r.owedCents, 0);
+  const sel = $('seMethod');
+  const methodLabel = sel.options[sel.selectedIndex].text;
+
+  // Payments are append-only by design, so there is no un-tap. Ask first.
+  if (!confirm(`Mark ${centsToDollars(total)} paid to ${settleName}? This goes into the ledger as a payment — the way to undo it later is a matching reversal, not a delete.`)) return;
+
+  const payout = buildPayout(settleName, chosen, {
+    payoutId: ulid(),
+    paidAt: $('seDate').value || new Date().toISOString().slice(0, 10),
+    method: sel.value,
+    methodLabel,
+    nextId: ulid,
+  });
+
+  for (const p of payout.payments) {
+    const r = await store.get('items', p.itemId);
+    if (!r) continue;
+    r.data.payments = (r.data.payments || []).concat([p.payment]);
+    r.data.updatedAt = new Date().toISOString();
+    await outbox.enqueueRecord('items', p.itemId, r.data);
+  }
+
+  const text = formatReceipt(payout);
+  await loadSettleRows();
+  $('settleReceiptOut').textContent = text;
+  $('settleReceipt').hidden = false;
+  $('btnCopyReceipt').onclick = (e) => copyToClipboard(text, e.target, 'settleFallback');
+  toast(`Paid ${centsToDollars(total)} ✓`);
+  renderList();
+}
+
 async function advanceStatus(id, next) {
   if (next === 'dead' && !confirm('Mark dead? It keeps its FLIP number and history, but leaves the active pipeline.')) return;
   const r = await store.get('items', id);
@@ -770,6 +889,9 @@ export function init() {
   $('btnLiCancel').addEventListener('click', () => { $('listingForm').hidden = true; });
   $('btnSaSave').addEventListener('click', saveSale);
   $('btnSaCancel').addEventListener('click', () => { $('saleForm').hidden = true; });
+  $('btnSettlePay').addEventListener('click', doSettle);
+  $('btnSettleBack').addEventListener('click', () => { sub('invList'); renderList(); });
+  $('btnSettleDone').addEventListener('click', () => { sub('invList'); renderList(); });
   $('btnGenerate').addEventListener('click', generateCopy);
   $('btnCopyClose').addEventListener('click', () => { $('copySection').hidden = true; });
   $('copyTier').addEventListener('input', () => { $('copyCustom').hidden = $('copyTier').value !== 'custom'; });
