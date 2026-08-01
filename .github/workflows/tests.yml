@@ -1,0 +1,57 @@
+# Runs on every push, so the checks stop depending on anyone remembering them.
+#
+# The point of this file: a test that only runs when someone thinks of it has an
+# expected value of roughly zero. FLIP-0001 shipped a broken button past 61 green
+# fixtures because nothing looked at the screen. These now look, automatically.
+#
+# GitHub Pages deploys from `main` on its own. This does NOT gate the deploy —
+# it tells Ben afterwards, by email, that something went red. Gating would mean
+# a failed run silently blocks a fix he is trying to ship from his phone.
+
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  money:
+    name: money + shell (no install)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # These two must keep running with zero dependencies. If either ever needs
+      # an npm install to pass, something has gone wrong with the project, not
+      # with the test.
+      - name: Settlement fixtures
+        run: node tests/settlement.test.mjs
+
+      - name: Offline shell, version drift, and NFR-002 token scan
+        run: node tests/shell-manifest.test.mjs
+
+  screen:
+    name: screen (jsdom)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tests/ui/package-lock.json
+
+      - name: Install pinned dev deps
+        working-directory: tests/ui
+        run: npm ci
+
+      # buttons.test.mjs is the FLIP-0001 regression suite: which buttons appear
+      # on an item in each status. If it goes red, do not "fix" the test.
+      - name: Button visibility and settle-up flow
+        working-directory: tests/ui
+        run: npm test

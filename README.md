@@ -7,12 +7,18 @@ Static, zero-build PWA. Code only: all data lives in a separate PRIVATE repo
 platform config with personal defaults. This repo is public so GitHub Pages can
 host it free.
 
-## Pre-push checklist (NFR-002)
-```
-grep -rn "github_pat_\|ghp_" . --exclude-dir=.git
-```
-Must return nothing. Also confirm every file referenced by index.html/sw.js exists
-in the repo (the Backstage dropped-vendor lesson).
+## Pre-push checklist (NFR-002) — now automated
+Both of these used to be manual greps, which meant they got skipped on exactly
+the session where they mattered. They are now assertions in
+`tests/shell-manifest.test.mjs`, run by CI on every push:
+
+- no `github_pat_` / `ghp_` token anywhere in this **public** repo
+- every file referenced by `index.html` and `sw.js` exists (the Backstage
+  dropped-vendor lesson)
+- every module actually imported by the app is in `sw.js`'s SHELL list, or it
+  breaks offline — in a dead zone, at a garage sale, which is where it gets used
+- `APP_VERSION` and the `sw.js` cache version agree, so the badge can never
+  claim a version the service worker is not serving
 
 ## Tests
 
@@ -43,6 +49,11 @@ the test.
 
 Dependencies are pinned and dev-only. Nothing that ships to the phone has a
 build step or a runtime dependency.
+
+**CI runs all three suites on every push** (`.github/workflows/tests.yml`), so
+none of this depends on anyone remembering. It does not gate the Pages deploy —
+it emails you when something goes red, rather than blocking a fix you are trying
+to push from your phone.
 
 ## Local preview
 ES modules need a server (file:// won't work):
