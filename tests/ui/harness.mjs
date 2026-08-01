@@ -11,6 +11,16 @@
 // Kept apart from tests/settlement.test.mjs on purpose: that one stays
 // framework-free and install-free (`node tests/settlement.test.mjs`, no npm).
 // This one costs `npm i` and lives behind it.
+//
+// KNOWN BLIND SPOT — do not trust this harness for CSS.
+// jsdom resolves `[hidden]` with UA priority, so `getComputedStyle(el).display`
+// returns 'none' for a hidden element even when an author rule like
+// `.fb-overlay { display: flex }` would keep it visible in a real browser. That
+// exact bug shipped in v23 and this harness passed 29 assertions over the top of
+// it, because `el.hidden` reads the property and the property was correct.
+// The pixels were not. Guarded statically in tests/shell-manifest.test.mjs, but
+// the real lesson stands: this proves wiring and data, never appearance. Look at
+// the app in a browser before shipping.
 
 import 'fake-indexeddb/auto';
 import { JSDOM } from 'jsdom';

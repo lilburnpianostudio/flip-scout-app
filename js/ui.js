@@ -7,12 +7,13 @@ import * as store from './store.js';
 import * as outbox from './outbox.js';
 import * as investigate from './investigate.js';
 import * as inventory from './inventory.js';
+import * as feedback from './feedback.js';
 
 const $ = (id) => document.getElementById(id);
 
 // Bump alongside the sw.js cache version. Shown in the topbar so "what version
 // are you on?" is never a guessing game.
-export const APP_VERSION = 'v22';
+export const APP_VERSION = 'v23';
 
 // ---------- toast ----------
 let toastTimer;
@@ -59,6 +60,7 @@ async function refreshPill() {
 function showSignin() {
   $('view-signin').hidden = false;
   $('shell').hidden = true;
+  feedback.setVisible(false);
   const cfg = gh.getConfig();
   if (cfg.owner) $('inOwner').value = cfg.owner;
   if (cfg.repo) $('inRepo').value = cfg.repo;
@@ -67,6 +69,7 @@ function showSignin() {
 function showShell() {
   $('view-signin').hidden = true;
   $('shell').hidden = false;
+  feedback.setVisible(true);
   show(localStorage.getItem('fs.lastView') || 'inventory');
   refreshPill();
   outbox.sync().then(refreshPill).catch(() => {}); // background, never blocks UI
@@ -157,6 +160,7 @@ function boot() {
 
   investigate.init(show);
   inventory.init();
+  feedback.init();
 
   if (gh.hasToken()) showShell();
   else showSignin();

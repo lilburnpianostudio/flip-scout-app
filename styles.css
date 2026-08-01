@@ -5,6 +5,15 @@
   --tap: 44px;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+/* The whole app hides things with the `hidden` attribute. The browser's default
+   `[hidden] { display: none }` is a UA rule, so ANY author rule that sets
+   display on the same element silently wins and the "hidden" element stays on
+   screen. `.fb-overlay { display: flex }` shipped that way for about ten
+   minutes; `.pipe-totals { display: grid }` had it far longer — an empty
+   inventory still drew its totals row. One rule kills the whole class.
+   Asserted in tests/shell-manifest.test.mjs so it cannot be quietly deleted. */
+[hidden] { display: none !important; }
 html { font-size: 16px; }
 body {
   font-size: 18px;
@@ -168,6 +177,34 @@ select {
 .settle-row.settled { color: var(--mid); }
 .btn:disabled { opacity: 0.45; }
 .settle-row.settled b { color: var(--green-mid); }
+
+/* feedback */
+.fab {
+  position: fixed; right: 14px; z-index: 55;
+  bottom: calc(84px + env(safe-area-inset-bottom));
+  width: 52px; height: 52px; border: none; border-radius: 50%;
+  background: var(--card); color: var(--green); font-size: 24px; line-height: 1;
+  box-shadow: 0 3px 14px rgba(28,28,26,0.22); cursor: pointer;
+}
+.fb-overlay {
+  position: fixed; inset: 0; z-index: 70; display: flex;
+  align-items: flex-end; justify-content: center;
+  background: rgba(28,28,26,0.45); padding: 14px;
+}
+.fb-card {
+  background: var(--card); border-radius: 14px; padding: 18px;
+  width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto;
+  margin-bottom: calc(8px + env(safe-area-inset-bottom));
+}
+.fb-card h3 { font-size: 19px; margin-bottom: 6px; }
+.fb-card textarea { margin-bottom: 12px; }
+.fb-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.fb-tag {
+  min-height: var(--tap); border: 1.5px solid #ddd8ce; border-radius: 99px;
+  background: var(--card); color: var(--mid); font-family: inherit;
+  font-size: 16px; padding: 6px 16px; cursor: pointer;
+}
+.fb-tag.on { border-color: var(--green-mid); background: var(--green-pale); color: var(--green); font-weight: 700; }
 
 /* copy output */
 .copy-text { background: var(--paper); border-radius: 10px; padding: 12px 14px; font-size: 17px; white-space: pre-wrap; margin-bottom: 6px; }

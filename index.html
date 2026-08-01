@@ -264,6 +264,9 @@
       <li>Payments are only ever added, never erased — so "what did I pay her, and when" always has an answer. Paid the wrong amount? Tell Larry and he'll log a correction.</li>
     </ol>
 
+    <h3 class="help-h">💬 Telling Larry something is wrong</h3>
+    <p class="help-p">The <b>💬</b> button in the bottom right works on every screen. Tap it wherever you are and say what tripped you up, what's missing, or what you'd rather it did — the screen you're on, the item you were looking at, and the app version get attached for you. It saves offline like everything else, so it works in a dead zone at a garage sale.</p>
+
     <h3 class="help-h">🔄 The sync pill (top bar)</h3>
     <p class="help-p"><b>synced</b> = everything is in your GitHub repo. <b>2 to sync</b> = captures waiting (normal in dead zones, nothing is lost). Tap the pill to force a sync. Airplane mode is fine: everything saves on the phone and uploads later.</p>
 
@@ -273,6 +276,22 @@
     <button class="btn btn-primary btn-block" id="btnHelpClose">Got it ←</button>
   </div>
 </section>
+
+<!-- Feedback: lives outside #shell so it is reachable from the help page too. -->
+<button id="fbFab" class="fab" title="Tell Larry about this screen" hidden>💬</button>
+
+<div id="fbOverlay" class="fb-overlay" hidden>
+  <div class="fb-card">
+    <h3 id="fbAbout">About this screen</h3>
+    <p class="hint">What tripped you up, what's missing, what you'd rather it did. Larry reads these — the screen you're on and the version get attached automatically.</p>
+    <div id="fbTags" class="fb-tags"></div>
+    <textarea id="fbText" rows="5" placeholder="Type or dictate it…"></textarea>
+    <div class="tworow">
+      <button class="btn btn-primary" id="fbSend">Send</button>
+      <button class="btn btn-ghost" id="fbCancel">Cancel</button>
+    </div>
+  </div>
+</div>
 
 <div class="toast" id="toast" hidden></div>
 

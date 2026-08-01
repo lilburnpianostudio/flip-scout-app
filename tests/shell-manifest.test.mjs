@@ -93,6 +93,17 @@ const offenders = [];
 ok('NFR-002: no GitHub token committed to this PUBLIC repo', offenders.length === 0,
   offenders.join(', '));
 
+// ---- `hidden` actually hides -----------------------------------------------
+// The app hides everything with the `hidden` attribute, and `[hidden]` is only
+// a UA rule — so any author rule setting `display` on the same element wins and
+// the element stays on screen. Two shipped that way (.fb-overlay, .pipe-totals)
+// and neither was catchable by a jsdom assertion on `el.hidden`, which reads
+// the property rather than the pixels. The global override is the fix; this
+// guards the fix.
+const css = read('styles.css');
+ok('styles.css must keep the global [hidden] { display: none !important } rule',
+  /\[hidden\]\s*\{[^}]*display:\s*none\s*!important/.test(css));
+
 // ---- the version badge and the cache version agree ------------------------
 // They are bumped by hand in two files. When they drift, the service worker
 // serves a stale shell while the badge claims the new version — which is
