@@ -20,7 +20,7 @@ const $ = (id) => document.getElementById(id);
 // Forward-only lifecycle (ADR-010). 'sold' entry happens via sale close (3.2).
 export const TRANSITIONS = {
   scouted: ['acquired', 'dead'],
-  acquired: ['listed', 'dead'],
+  acquired: ['listed', 'sold', 'dead'], // sold direct: FLIP-D25
   listed: ['sold', 'dead'],
   sold: [],
   dead: [],
@@ -472,7 +472,12 @@ async function openDetail(id) {
     addBtn('📝 Listing copy', 'btn-primary', () => openCopySection(d));
     addBtn('＋ Add listing', 'btn-primary', () => openListingForm(d));
   }
-  if (d.status === 'listed') addBtn('💰 Sold…', 'btn-buy', () => openSaleForm(d));
+  // Sellable straight from `acquired` (FLIP-D25). The forward-only lifecycle
+  // assumed acquired -> listed -> sold, but things sell off a listing that was
+  // never logged, or by word of mouth. FLIP-0001 really sold for $140 while the
+  // app offered no way to say so, which is how the first real sale in this
+  // tracker's life went unrecorded for days.
+  if (d.status === 'acquired' || d.status === 'listed') addBtn('💰 Sold…', 'btn-buy', () => openSaleForm(d));
   if (d.status !== 'sold' && d.status !== 'dead') addBtn('Mark dead', 'btn-pass', () => advanceStatus(d.id, 'dead'));
   sub('invDetail');
 }
