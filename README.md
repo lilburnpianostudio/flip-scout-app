@@ -14,6 +14,36 @@ grep -rn "github_pat_\|ghp_" . --exclude-dir=.git
 Must return nothing. Also confirm every file referenced by index.html/sw.js exists
 in the repo (the Backstage dropped-vendor lesson).
 
+## Tests
+
+Two lanes, on purpose.
+
+**The money — no install, no framework, run it always:**
+```
+node tests/settlement.test.mjs
+```
+Pure functions from `js/settlement.js`. This is the everyday check and it must
+stay dependency-free, so a clean checkout can prove the arithmetic with nothing
+but node.
+
+**The screen — costs one `npm i`, run it after touching the UI:**
+```
+cd tests/ui && npm i && npm test
+```
+Boots the real `index.html` under jsdom and drives the real `inventory.js`.
+It exists because **FLIP-0001 sold for $140 and sat unrecorded for days while
+every money fixture stayed green** — the math was perfect, the "Sold…" button
+just was not on screen for an `acquired` item. Pure fixtures cannot catch that
+class of bug by construction.
+
+`tests/ui/buttons.test.mjs` is the regression suite for exactly that: which
+buttons appear on an item in each status. If the "ACQUIRED item offers Sold…"
+assertion ever goes red, someone has re-broken FLIP-0001 — fix the code, not
+the test.
+
+Dependencies are pinned and dev-only. Nothing that ships to the phone has a
+build step or a runtime dependency.
+
 ## Local preview
 ES modules need a server (file:// won't work):
 ```

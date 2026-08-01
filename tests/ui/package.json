@@ -1,0 +1,14 @@
+{
+  "name": "flip-scout-ui-tests",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "DOM tests for Flip Scout. Deliberately isolated here so the app itself, and tests/settlement.test.mjs, stay dependency-free and install-free.",
+  "scripts": {
+    "test": "node buttons.test.mjs && node settle.test.mjs"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "6.2.5",
+    "jsdom": "30.0.1"
+  }
+}
