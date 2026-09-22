@@ -7,7 +7,7 @@
 //
 //   node tests/ui/feedback.test.mjs   (after npm i in tests/ui)
 
-import { boot, is, report, anItem, aSale, tick } from './harness.mjs';
+import { boot, is, report, anItem, aSale, tick, appModule } from './harness.mjs';
 import { freezeSale } from '../../js/settlement.js';
 
 const austin = anItem({
@@ -110,7 +110,9 @@ is('against the right screen', n.screen, 'settle');
 is('with a human label for it', n.screenLabel, 'Settle up');
 is('the text is trimmed', n.text, "I wasn't sure if this had already sent");
 is('the tag rides along', n.tag, 'confusing');
-is('the app version is captured so Larry never has to ask', n.appVersion, 'v23');
+// Read from the module, never typed: a literal here broke on every release.
+const { APP_VERSION } = await import(appModule('ui.js'));
+is('the app version is captured so Larry never has to ask', n.appVersion, APP_VERSION);
 is('context Ben did not have to type', n.context, 'Settle up with Partner A');
 is('marked new for triage', n.status, 'new');
 is('it has a timestamp', typeof n.createdAt === 'string' && n.createdAt.length > 10, true);

@@ -32,6 +32,9 @@ jobs:
       - name: Settlement fixtures
         run: node tests/settlement.test.mjs
 
+      - name: Listing fixtures (posted-on, take-down rule)
+        run: node tests/listing.test.mjs
+
       - name: Offline shell, version drift, and NFR-002 token scan
         run: node tests/shell-manifest.test.mjs
 

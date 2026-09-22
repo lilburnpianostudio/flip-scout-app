@@ -13,7 +13,7 @@ const $ = (id) => document.getElementById(id);
 
 // Bump alongside the sw.js cache version. Shown in the topbar so "what version
 // are you on?" is never a guessing game.
-export const APP_VERSION = 'v23';
+export const APP_VERSION = 'v24';
 
 // ---------- toast ----------
 let toastTimer;

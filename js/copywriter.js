@@ -77,6 +77,8 @@ function bodyParts(category, f) {
 const CLOSERS = {
   fbm: 'Cash or Venmo, porch pickup is easy. Happy to answer questions.',
   ebay: 'Ships carefully packed. Check the photos, they are part of the description.',
+  offerup: 'Cash or Venmo, local pickup. Happy to answer questions.',
+  craigslist: 'Cash, local pickup. If the post is still up, it is still available.',
 };
 
 // generate(category, platform, fields) → description string.

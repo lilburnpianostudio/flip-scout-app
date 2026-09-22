@@ -101,6 +101,9 @@
             <label class="field"><span>Quick-sale price</span><input type="text" inputmode="decimal" id="itQuick" placeholder="$ move it this week"></label>
             <label class="field"><span>Patient price</span><input type="text" inputmode="decimal" id="itPatient" placeholder="$ willing to wait"></label>
           </div>
+          <label class="field"><span>Photos album on your iPhone (leave blank for the FLIP number + name)</span>
+            <input type="text" id="itAlbum" placeholder="FLIP-0006 Kurzweil SP88X">
+          </label>
           <label class="field"><span>Listing description (title is the name above; this is the body you paste into FB/eBay)</span>
             <textarea id="itDesc" rows="4" placeholder="write it, dictate it, or tap 📝 Listing copy on the item to generate one"></textarea>
           </label>
@@ -152,8 +155,10 @@
         <div class="card">
           <button class="btn btn-ghost btn-small" id="btnDetBackTop">← Back</button>
           <h2 id="detTitle" style="margin-top:8px;"></h2>
+          <div id="takedownBox"></div>
           <div id="detRows"></div>
           <div class="det-actions" id="detActions"></div>
+          <div id="postedOn"></div>
 
           <div id="listingForm" hidden class="subform">
             <h3>Add listing</h3>
@@ -188,7 +193,7 @@
           <div id="copySection" hidden class="subform">
             <h3>Listing copy</h3>
             <div class="tworow">
-              <label class="field"><span>For platform</span><select id="copyPlatform"><option value="fbm">FB Marketplace</option><option value="ebay">eBay</option></select></label>
+              <label class="field"><span>For platform</span><select id="copyPlatform"><option value="fbm">FB Marketplace</option><option value="offerup">OfferUp</option><option value="craigslist">Craigslist</option><option value="ebay">eBay</option></select></label>
               <label class="field"><span>Price to show</span><select id="copyTier"></select></label>
             </div>
             <input type="text" inputmode="decimal" id="copyCustom" placeholder="$ custom price" hidden style="margin-bottom:10px;">

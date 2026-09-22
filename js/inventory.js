@@ -38,8 +38,12 @@ export function previewAt(d, priceCents) {
   return settle(d.costCents || 0, priceCents, d.partners);
 }
 
-const SELL_PLATFORMS = [['fbm', 'FB Marketplace'], ['ebay', 'eBay'], ['offerup', 'OfferUp (existing)']];
-const platformLabel = (id) => (SELL_PLATFORMS.find(([v]) => v === id) || [id, id])[1];
+// Platforms, posted-on state, album names and the take-down rule live in
+// listing.js: pure, and tested install-free (tests/listing.test.mjs).
+import {
+  SELL_PLATFORMS, platformLabel, isListedOn, askingCents, albumName,
+  everythingText, closeSoldListing, pendingTakedowns, markTakenDown,
+} from './listing.js';
 
 // How the item came in (FLIP-D21). Only 'bought' cost money Ben chose to spend;
 // the other three are $0 by definition, which is what makes a $0 cost readable
@@ -77,6 +81,7 @@ function blankItem() {
     priceQuickCents: null,
     pricePatientCents: null,
     notes: '',
+    photoAlbum: '', // iPhone Photos album NAME only; blank = albumName() default
     createdAt: now,
     updatedAt: now,
     statusChangedAt: now,
@@ -183,6 +188,20 @@ async function renderList() {
   rows.forEach((r) => (bySt[r.data.status] || bySt.scouted).push(r));
   Object.values(bySt).forEach((g) => g.sort((a, b) => (a.data.createdAt < b.data.createdAt ? 1 : -1)));
 
+  // Sold but still up somewhere: top of the list, above everything, until
+  // clear. This is the reminder that stops the same item selling twice.
+  const takedowns = bySt.sold.filter((r) => pendingTakedowns(r.data).length);
+  if (takedowns.length) {
+    const h = document.createElement('p');
+    h.className = 'pipe-group';
+    h.textContent = `⚠ Sold, take these down (${takedowns.length})`;
+    box.appendChild(h);
+    takedowns.forEach((r) => {
+      const n = pendingTakedowns(r.data).length;
+      box.appendChild(itemRow(r, `<span class="td-badge">${n} still up</span>`));
+    });
+  }
+
   [['acquired', 'Not listed yet'], ['listed', 'Listed, waiting on a buyer'], ['scouted', 'Scouted']].forEach(([st, label]) => {
     if (!bySt[st].length) return;
     const h = document.createElement('p');
@@ -250,6 +269,8 @@ function openForm(prefill) {
   $('itPatient').value = d.pricePatientCents != null ? (d.pricePatientCents / 100) : '';
   $('itDesc').value = d.description || '';
   $('itNotes').value = d.notes || '';
+  $('itAlbum').value = d.photoAlbum || '';
+  $('itAlbum').placeholder = d.flipId ? albumName({ ...d, photoAlbum: '' }) : 'FLIP number + name';
   formPartners = (d.partners || []).map((p) => ({ ...p }));
   renderPartners();
   $('invFormTitle').textContent = editingId ? `Edit ${flipLabel(d)}` : 'New item';
@@ -369,6 +390,7 @@ async function saveForm() {
   d.pricePatientCents = dollarsToCents($('itPatient').value);
   d.description = $('itDesc').value.trim();
   d.notes = $('itNotes').value.trim();
+  d.photoAlbum = $('itAlbum').value.trim();
   // Trim on the way in as well as on the way out: the name is the ledger key,
   // and a stray trailing space would split one partner into two balances.
   // `other` is a form-only flag for "typing a name not on the roster" and must
@@ -426,8 +448,12 @@ async function openDetail(id) {
     if (investedTotal(d.partners) > 0) rows.push(['My money in', centsToDollars(mine)]);
   }
   if (d.listings && d.listings.length) {
-    rows.push(['Listed on', d.listings.map((l) => `${platformLabel(l.platform)} · ${centsToDollars(l.priceCents)} · ${l.listedAt || ''}${l.url ? ` · <a href="${esc(l.url)}" target="_blank" rel="noopener">open</a>` : ''}`).join('<br>')]);
+    rows.push(['Listed on', d.listings.map((l) => {
+      const line = `${platformLabel(l.platform)} · ${l.priceCents != null ? centsToDollars(l.priceCents) : ''} · ${l.listedAt || ''}${l.url ? ` · <a href="${esc(l.url)}" target="_blank" rel="noopener">open</a>` : ''}`;
+      return l.removedAt ? `<span class="li-down">${line}</span> <small>down ${esc(l.removedAt)}${l.removedWhy ? ', ' + esc(l.removedWhy) : ''}</small>` : line;
+    }).join('<br>')]);
   }
+  if (d.status !== 'dead') rows.push(['Photos album', `${esc(albumName(d))}${d.photoAlbum ? '' : ' <small>(suggested)</small>'}`]);
   if (d.sale) {
     rows.push(['Sold', `${platformLabel(d.sale.platform)} · ${centsToDollars(d.sale.priceCents)} · ${d.sale.soldAt || ''}${d.sale.feesCents ? ' · fees ' + centsToDollars(d.sale.feesCents) : ''}`]);
     const m = frozenMargin(d);
@@ -460,6 +486,8 @@ async function openDetail(id) {
   $('listingForm').hidden = true;
   $('saleForm').hidden = true;
   $('copySection').hidden = true;
+  renderTakedowns(d);
+  renderPostedOn(d);
   renderShotlist(d);
 
   const btns = $('detActions');
@@ -471,8 +499,13 @@ async function openDetail(id) {
     b.addEventListener('click', fn);
     btns.appendChild(b);
   };
+  const selling = d.status === 'acquired' || d.status === 'listed';
+  if (selling && d.name) addBtn('📋 Copy everything', 'btn-primary', (e) => copyToClipboard(everythingText(d), e.target));
   if (d.name) addBtn('📋 Copy title', 'btn-ghost', (e) => copyToClipboard(d.name, e.target));
+  const ask = askingCents(d);
+  if (selling && ask != null) addBtn('📋 Copy price', 'btn-ghost', (e) => copyToClipboard(String(ask % 100 === 0 ? ask / 100 : (ask / 100).toFixed(2)), e.target));
   if (d.description) addBtn('📋 Copy description', 'btn-ghost', (e) => copyToClipboard(d.description, e.target));
+  if (selling) addBtn('🖼️ Copy album name', 'btn-ghost', (e) => copyToClipboard(albumName(d), e.target));
   if (d.status === 'scouted') addBtn('Mark acquired', 'btn-primary', () => advanceStatus(d.id, 'acquired'));
   if (d.status === 'acquired' || d.status === 'listed') {
     addBtn('📝 Listing copy', 'btn-primary', () => openCopySection(d));
@@ -575,6 +608,73 @@ async function generateCopy() {
     await outbox.enqueueRecord('items', detailId, rec.data);
     toast('Saved to the item ✓');
   };
+}
+
+// ---------- posted on: one tap per marketplace (v24, FLIP-D30) ----------
+// Before v24 the only way to record a listing was a form (platform, price,
+// date, URL), and in two months not one listing was ever recorded, including
+// on both items that sold. A record that costs a form does not get kept. So a
+// tap marks it posted at the asking price, today, and the full form stays for
+// when a URL is worth saving.
+function renderPostedOn(d) {
+  const box = $('postedOn');
+  if (d.status !== 'acquired' && d.status !== 'listed') { box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="posted-on"><p class="pipe-group">Posted on (tap when you post it)</p>
+    <div class="posted-chips">${SELL_PLATFORMS.map(([v, l]) =>
+      `<button type="button" class="posted-chip${isListedOn(d, v) ? ' on' : ''}" data-post="${v}">${isListedOn(d, v) ? '✓ ' : ''}${l}</button>`).join('')}</div>
+    <p class="posted-hint">Tap again to mark it taken down.</p></div>`;
+  box.querySelectorAll('[data-post]').forEach((b) => {
+    b.addEventListener('click', () => togglePosted(d.id, b.dataset.post));
+  });
+}
+
+async function togglePosted(id, platform) {
+  const r = await store.get('items', id);
+  if (!r) return;
+  const now = new Date().toISOString();
+  const today = now.slice(0, 10);
+  if (isListedOn(r.data, platform)) {
+    if (!confirm(`Took it down from ${platformLabel(platform)}?`)) return;
+    markTakenDown(r.data, platform, today);
+    toast(`Down from ${platformLabel(platform)}`);
+  } else {
+    r.data.listings = r.data.listings || [];
+    r.data.listings.push({ platform, priceCents: askingCents(r.data), listedAt: today });
+    if (r.data.status === 'acquired') {
+      r.data.status = 'listed';
+      r.data.statusChangedAt = now;
+    }
+    toast(`Posted on ${platformLabel(platform)} ✓`);
+  }
+  r.data.updatedAt = now;
+  await outbox.enqueueRecord('items', id, r.data);
+  openDetail(id);
+  renderList();
+}
+
+// ---------- take-down checklist (v24, FLIP-D30) ----------
+// The double-sale guard. Shows on a sold item while any other marketplace
+// still has it up, and the item stays at the top of the list until it is clear.
+function renderTakedowns(d) {
+  const box = $('takedownBox');
+  const todo = pendingTakedowns(d);
+  if (!todo.length) { box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="takedown"><b>⚠ Sold. Take it down from:</b>${todo.map((l) =>
+    `<label class="confirm-row"><input type="checkbox" data-down="${esc(l.platform)}"><span>${esc(platformLabel(l.platform))}</span>${l.url ? `<a href="${esc(l.url)}" target="_blank" rel="noopener">open</a>` : ''}</label>`).join('')}
+    <p class="posted-hint">Tick each one once it is gone.</p></div>`;
+  box.querySelectorAll('[data-down]').forEach((cb) => {
+    cb.addEventListener('change', async () => {
+      if (!cb.checked) return;
+      const r = await store.get('items', d.id);
+      if (!r) return;
+      markTakenDown(r.data, cb.dataset.down, new Date().toISOString().slice(0, 10));
+      r.data.updatedAt = new Date().toISOString();
+      await outbox.enqueueRecord('items', d.id, r.data);
+      toast(`Down from ${platformLabel(cb.dataset.down)} ✓`);
+      openDetail(d.id);
+      renderList();
+    });
+  });
 }
 
 // ---------- shot list (FR-007) ----------
@@ -700,6 +800,7 @@ async function saveSale() {
   // Everything downstream reads these, so editing shares later cannot rewrite
   // a payout that has already been agreed to or handed over.
   freezeSale(r.data);
+  closeSoldListing(r.data, r.data.sale.soldAt);
   r.data.status = 'sold';
   r.data.statusChangedAt = now;
   r.data.updatedAt = now;
