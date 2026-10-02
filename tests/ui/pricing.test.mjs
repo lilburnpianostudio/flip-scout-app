@@ -34,10 +34,10 @@ await openItem('FLIP-0020');
   // The label and the numbers are separate flex children; join them the way the eye does.
   const rows = [...$('netBox').querySelectorAll('.net-row')].map((r) =>
     [...r.children].map((c) => c.textContent.replace(/\s+/g, ' ').trim()).join(' | '));
-  is('the box is priced at the opening ask', $('netBox').textContent.includes('At $200.00, you would keep'), true);
+  is('the box is headed plainly', $('netBox').textContent.includes('What you would keep, marketplace by marketplace'), true);
   is('one line per marketplace', rows.length, 4);
-  is('FB pickup keeps all of it', rows[0], 'FB Marketplace pickup | keep $200.00 no fee · $150.00 profit');
-  is('eBay shows its fee and a smaller profit', rows[3], 'eBay shipped | keep $172.40 fee $27.60 · $122.40 profit');
+  is('FB pickup keeps all of it', rows[0], 'FB Marketplace pickup | at $200.00 keep $200.00 no fee · $150.00 profit');
+  is('eBay shows its fee and a smaller profit', rows[3], 'eBay shipped | at $200.00 keep $172.40 fee $27.60 · $122.40 profit');
   is('the date the rates were checked is on screen', /Fee rates checked \d{4}-\d{2}-\d{2}/.test($('netBox').textContent), true);
 }
 

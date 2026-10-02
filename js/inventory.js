@@ -45,6 +45,12 @@ import {
   everythingText, closeSoldListing, pendingTakedowns, markTakenDown,
   priceLadder, ladderProblems, platformsFor, sellUrl, copyFor, askOn, platformText,
 } from './listing.js';
+// Offers, pending sales, status per marketplace (v27). Pure, tested in
+// tests/pipeline.test.mjs.
+import {
+  openOffers, bestOffer, addOffer, closeOffer, closeOffersOnSale, offerVerdict,
+  setPending, isPending, platformStatus, STATUS_LABEL, attention,
+} from './pipeline.js';
 // The AI step, by copy and paste (v26). Pure, tested in tests/aicopy.test.mjs.
 import { buildPrompt, parseAnswer, applyAnswer } from './aicopy.js';
 // What each marketplace keeps (v25). Pure, tested in tests/fees.test.mjs.
@@ -209,17 +215,34 @@ async function renderList() {
     });
   }
 
-  [['acquired', 'Not listed yet'], ['listed', 'Listed, waiting on a buyer'], ['scouted', 'Scouted']].forEach(([st, label]) => {
-    if (!bySt[st].length) return;
+  // Unsold items, grouped by what they need from Ben, most urgent first
+  // (v27). The old grouping was by status, which answered "where is it in the
+  // lifecycle" when the question at the top of the day is "what do I do".
+  const selling = bySt.acquired.concat(bySt.listed);
+  const byNeed = { offer: [], pending: [], ready: [], live: [], unlisted: [] };
+  selling.forEach((r) => { (byNeed[attention(r.data)] || byNeed.unlisted).push(r); });
+  const days = (r) => daysIn(r.data.statusChangedAt || r.data.updatedAt || r.data.createdAt);
+  const group = (label, list, badge) => {
+    if (!list.length) return;
     const h = document.createElement('p');
     h.className = 'pipe-group';
-    h.textContent = `${label} (${bySt[st].length})`;
+    h.textContent = `${label} (${list.length})`;
     box.appendChild(h);
-    bySt[st].forEach((r) => {
-      const days = daysIn(r.data.statusChangedAt || r.data.updatedAt || r.data.createdAt);
-      box.appendChild(itemRow(r, `<span class="ir-days">${days}d</span>`));
-    });
+    list.forEach((r) => box.appendChild(itemRow(r, badge(r))));
+  };
+  group('💬 Offers waiting', byNeed.offer, (r) => {
+    const o = bestOffer(r.data);
+    // Short on purpose: a long badge squeezes the item's name off the row.
+    return `<span class="of-badge" title="on ${esc(platformLabel(o.platform))}">${centsToDollars(o.amountCents).replace(/\.00$/, '')} offer</span>`;
   });
+  group('🤝 Sale pending', byNeed.pending, (r) => `<span class="ir-days">${days(r)}d</span>`);
+  group('Ready to post', byNeed.ready, (r) => `<span class="ir-days">${days(r)}d</span>`);
+  group('Live, waiting on a buyer', byNeed.live, (r) => {
+    const n = (r.data.listings || []).filter((l) => !l.removedAt).length;
+    return `<span class="ir-days">${n} place${n === 1 ? '' : 's'} · ${days(r)}d</span>`;
+  });
+  group('Not listed yet', byNeed.unlisted, (r) => `<span class="ir-days">${days(r)}d</span>`);
+  group('Scouted', bySt.scouted, (r) => `<span class="ir-days">${days(r)}d</span>`);
 
   if (bySt.sold.length || bySt.dead.length) {
     const det = document.createElement('details');
@@ -529,7 +552,9 @@ async function openDetail(id) {
   $('saleForm').hidden = true;
   $('copySection').hidden = true;
   $('aiSection').hidden = true;
+  $('offerForm').hidden = true;
   renderTakedowns(d);
+  renderOffers(d);
   renderNet(d);
   renderPostedOn(d);
   renderShotlist(d);
@@ -561,6 +586,7 @@ async function openDetail(id) {
   // never logged, or by word of mouth. FLIP-0001 really sold for $140 while the
   // app offered no way to say so, which is how the first real sale in this
   // tracker's life went unrecorded for days.
+  if (d.status === 'acquired' || d.status === 'listed') addBtn('💬 Log an offer', 'btn-ghost', () => openOfferForm(d));
   if (d.status === 'acquired' || d.status === 'listed') addBtn('💰 Sold…', 'btn-buy', () => openSaleForm(d));
   if (d.status !== 'sold' && d.status !== 'dead') addBtn('Mark dead', 'btn-pass', () => advanceStatus(d.id, 'dead'));
   sub('invDetail');
@@ -690,10 +716,9 @@ function renderNet(d) {
     const how = n.mode === 'local' ? 'pickup' : 'shipped';
     const fee = n.feeCents ? `fee ${centsToDollars(n.feeCents)}` : 'no fee';
     const profit = n.profitCents == null ? '' : ` · <b class="${n.profitCents >= 0 ? 'v-buy' : 'v-loss'}">${centsToDollars(n.profitCents)} profit</b>`;
-    const at = n.priceCents !== ask ? ` <small>at ${centsToDollars(n.priceCents)}</small>` : '';
-    return `<div class="net-row"><span>${esc(label)} <small>${how}</small></span><div>keep <b>${centsToDollars(n.netCents)}</b>${at} <small>${fee}</small>${profit}</div></div>`;
+    return `<div class="net-row"><span>${esc(label)} <small>${how}</small></span><div><small>at ${centsToDollars(n.priceCents)}</small> keep <b>${centsToDollars(n.netCents)}</b> <small>${fee}</small>${profit}</div></div>`;
   }).join('');
-  box.innerHTML = `<div class="net-box"><p class="pipe-group">At ${centsToDollars(ask)}, you would keep</p>${lines}
+  box.innerHTML = `<div class="net-box"><p class="pipe-group">What you would keep, marketplace by marketplace</p>${lines}
     <p class="posted-hint">Estimates. Shipped sales also cost postage. Fee rates checked ${esc(feeTable.checkedOn || '')}.</p></div>`;
 }
 
@@ -719,7 +744,7 @@ function renderPostedOn(d) {
         <span class="plat-ask">${ask != null ? centsToDollars(ask) : ''}${copyFor(d, v) ? ' <small title="written for this marketplace">✍️</small>' : ''}</span>
         <button type="button" class="btn btn-ghost btn-small" data-pcopy="${v}">Copy</button>
         ${url ? `<a class="btn btn-ghost btn-small" data-popen="${v}" href="${esc(url)}" target="_blank" rel="noopener">Open</a>` : ''}
-      </div>`;
+      </div>${platSub(d, v)}`;
     }).join('')}
     <p class="posted-hint">✍️ = written for that marketplace. Tap a name again to mark it taken down.</p>
     <textarea id="postFallback" hidden rows="4"></textarea></div>`;
@@ -729,6 +754,117 @@ function renderPostedOn(d) {
   box.querySelectorAll('[data-pcopy]').forEach((b) => {
     b.addEventListener('click', (e) => copyToClipboard(platformText(d, b.dataset.pcopy), e.target, 'postFallback'));
   });
+  box.querySelectorAll('[data-pend]').forEach((b) => {
+    b.addEventListener('click', () => togglePending(d.id, b.dataset.pend));
+  });
+}
+
+// The line under a marketplace row: where it stands there, and for a listing
+// that is up, a way to say a buyer is on the way.
+function platSub(d, platform) {
+  const st = platformStatus(d, platform);
+  if (st === 'not-prepared') return '';
+  const live = (d.listings || []).filter((l) => !l.removedAt && l.platform === platform);
+  const since = live.length && live[live.length - 1].listedAt ? ` since ${esc(live[live.length - 1].listedAt)}` : '';
+  const toggle = live.length
+    ? ` · <button type="button" class="linkish" data-pend="${platform}">${st === 'pending' ? 'not pending after all' : 'mark sale pending'}</button>`
+    : '';
+  return `<div class="plat-sub st-${st}">${esc(STATUS_LABEL[st])}${live.length ? since : ''}${toggle}</div>`;
+}
+
+async function togglePending(id, platform) {
+  const r = await store.get('items', id);
+  if (!r) return;
+  const on = !isPending(r.data, platform);
+  setPending(r.data, platform, on);
+  r.data.updatedAt = new Date().toISOString();
+  await outbox.enqueueRecord('items', id, r.data);
+  toast(on ? `Sale pending on ${platformLabel(platform)}` : `Back to live on ${platformLabel(platform)}`);
+  openDetail(id);
+  renderList();
+}
+
+// ---------- offers (v27, FLIP-D33) ----------
+// An offer used to live in a marketplace inbox and in Ben's head. Logged here
+// it is weighed against the floor before he answers, and it puts the item at
+// the top of the list until he does.
+function offerLine(d, o) {
+  const v = offerVerdict(d, o.amountCents);
+  const n = expectedNet(o.platform, o.amountCents, { costCents: d.costCents, feeClass: feeClassOf(d) }, feeTable);
+  const keep = n ? ` You would keep ${centsToDollars(n.netCents)}${n.profitCents != null ? `, ${centsToDollars(n.profitCents)} profit` : ''}.` : '';
+  return { v, text: `${v.text}${keep}` };
+}
+
+function renderOffers(d) {
+  const box = $('offersBox');
+  const open = openOffers(d);
+  const selling = d.status === 'acquired' || d.status === 'listed';
+  if (!selling || !open.length) { box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="offers"><b>💬 Offer${open.length === 1 ? '' : 's'} waiting on you</b>${open.map((o) => {
+    const { v, text } = offerLine(d, o);
+    return `<div class="offer-row lv-${v.level}">
+      <div><b>${centsToDollars(o.amountCents)}</b> on ${esc(platformLabel(o.platform))} <small>${esc((o.at || '').slice(0, 10))}</small>
+        ${o.note ? `<br><small>${esc(o.note)}</small>` : ''}<br><span class="offer-verdict">${esc(text)}</span></div>
+      <div class="offer-btns">
+        <button type="button" class="btn btn-buy btn-small" data-oacc="${esc(o.id)}">Accept</button>
+        <button type="button" class="btn btn-ghost btn-small" data-odec="${esc(o.id)}">Decline</button>
+      </div></div>`;
+  }).join('')}</div>`;
+  const decide = async (oid, outcome) => {
+    const r = await store.get('items', d.id);
+    if (!r) return;
+    const now = new Date().toISOString();
+    closeOffer(r.data, oid, outcome, now.slice(0, 10));
+    r.data.updatedAt = now;
+    await outbox.enqueueRecord('items', d.id, r.data);
+    toast(outcome === 'accepted' ? 'Accepted: marked sale pending' : 'Declined, and kept on the record');
+    openDetail(d.id);
+    renderList();
+  };
+  box.querySelectorAll('[data-oacc]').forEach((b) => b.addEventListener('click', () => decide(b.dataset.oacc, 'accepted')));
+  box.querySelectorAll('[data-odec]').forEach((b) => b.addEventListener('click', () => decide(b.dataset.odec, 'declined')));
+}
+
+let offerItem = null;
+
+function openOfferForm(d) {
+  offerItem = d;
+  $('offerForm').hidden = false;
+  $('saleForm').hidden = true;
+  $('listingForm').hidden = true;
+  $('aiSection').hidden = true;
+  $('copySection').hidden = true;
+  // Where it is up comes first: that is where an offer comes from.
+  const live = platformsFor(d).filter(([v]) => isListedOn(d, v));
+  const rest = platformsFor(d).filter(([v]) => !isListedOn(d, v));
+  $('ofPlatform').innerHTML = live.concat(rest).map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  $('ofAmount').value = '';
+  $('ofNote').value = '';
+  $('ofVerdict').hidden = true;
+}
+
+function renderOfferVerdict() {
+  const out = $('ofVerdict');
+  const cents = dollarsToCents($('ofAmount').value);
+  if (!offerItem || cents == null) { out.hidden = true; return; }
+  const { v, text } = offerLine(offerItem, { platform: $('ofPlatform').value, amountCents: cents });
+  out.hidden = false;
+  out.className = `sale-net lv-${v.level}`;
+  out.textContent = text;
+}
+
+async function saveOffer() {
+  const cents = dollarsToCents($('ofAmount').value);
+  if (cents == null || cents <= 0) { toast('How much did they offer?'); return; }
+  const r = await store.get('items', detailId);
+  if (!r) return;
+  const now = new Date().toISOString();
+  addOffer(r.data, { platform: $('ofPlatform').value, amountCents: cents, note: $('ofNote').value, at: now });
+  r.data.updatedAt = now;
+  await outbox.enqueueRecord('items', detailId, r.data);
+  toast('Offer logged');
+  openDetail(detailId);
+  renderList();
 }
 
 // ---------- AI listings: carry the question out, bring the answer back (v26) ----------
@@ -934,9 +1070,13 @@ function openSaleForm(d) {
   $('saleForm').hidden = false;
   $('listingForm').hidden = true;
   $('aiSection').hidden = true;
+  $('offerForm').hidden = true;
   const last = (d.listings && d.listings.length) ? d.listings[d.listings.length - 1].platform : 'fbm';
   $('saPlatform').innerHTML = SELL_PLATFORMS.map(([v, l]) => `<option value="${v}"${v === last ? ' selected' : ''}>${l}</option>`).join('');
-  $('saPrice').value = '';
+  // An accepted offer is almost always the sale: start the form from it.
+  const acc = (d.offers || []).filter((o) => o.outcome === 'accepted').pop();
+  if (acc) $('saPlatform').value = acc.platform;
+  $('saPrice').value = acc ? (acc.amountCents / 100) : '';
   $('saFees').value = '';
   $('saShip').value = '';
   $('saDate').value = new Date().toISOString().slice(0, 10);
@@ -1003,6 +1143,7 @@ async function saveSale() {
   // a payout that has already been agreed to or handed over.
   freezeSale(r.data);
   closeSoldListing(r.data, r.data.sale.soldAt);
+  closeOffersOnSale(r.data, r.data.sale.soldAt);
   r.data.status = 'sold';
   r.data.statusChangedAt = now;
   r.data.updatedAt = now;
@@ -1200,6 +1341,9 @@ export function init() {
   $('btnSettleDone').addEventListener('click', () => { sub('invList'); renderList(); });
   $('btnGenerate').addEventListener('click', generateCopy);
   $('btnCopyClose').addEventListener('click', () => { $('copySection').hidden = true; });
+  $('btnOfSave').addEventListener('click', saveOffer);
+  $('btnOfCancel').addEventListener('click', () => { $('offerForm').hidden = true; });
+  ['ofAmount', 'ofPlatform'].forEach((id) => $(id).addEventListener('input', renderOfferVerdict));
   $('btnAiCopy').addEventListener('click', copyAiQuestion);
   $('btnAiApply').addEventListener('click', applyAiAnswer);
   $('btnAiClose').addEventListener('click', () => { $('aiSection').hidden = true; });

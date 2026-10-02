@@ -30,6 +30,7 @@ node tests/settlement.test.mjs
 node tests/listing.test.mjs
 node tests/fees.test.mjs
 node tests/aicopy.test.mjs
+node tests/pipeline.test.mjs
 ```
 Pure functions from `js/settlement.js`. This is the everyday check and it must
 stay dependency-free, so a clean checkout can prove the arithmetic with nothing

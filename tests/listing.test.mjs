@@ -163,6 +163,10 @@ is('no city or ZIP is baked into the public repo',
     askOn({ ...d, listings: [{ platform: 'ebay', priceCents: 45000 }] }, 'ebay'), 45000);
   is('a live listing somewhere ELSE does not set the price here',
     askOn({ ...d, listings: [{ platform: 'fbm', priceCents: 39000 }] }, 'ebay'), 47500);
+  is('nor does it set the price on a marketplace with no copy: the item’s own ask does',
+    askOn({ ...d, listings: [{ platform: 'ebay', priceCents: 49000 }] }, 'offerup'), 42500);
+  is('with no prices on the item at all, a live price is better than nothing',
+    askOn({ name: 'x', listings: [{ platform: 'ebay', priceCents: 49000 }] }, 'offerup'), 49000);
   is('one paste: title, price, description, tags',
     platformText(d, 'ebay'), ['Kurzweil SP88X Stage Piano', '$475', '', 'Tested.', '', 'Brand: Kurzweil'].join('\n'));
   is('Depop has no title, and its tags are hashtags',

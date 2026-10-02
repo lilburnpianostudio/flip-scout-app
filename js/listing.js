@@ -140,7 +140,11 @@ export function askOn(d, platform) {
   if (live.length && live[live.length - 1].priceCents != null) return live[live.length - 1].priceCents;
   const c = copyFor(d, platform);
   if (c && c.askCents != null) return c.askCents;
-  return askingCents(d);
+  // Then the prices on the item itself. NOT the newest live listing: that is
+  // another marketplace's price, and an eBay ask padded for fees is the wrong
+  // number to show for a porch pickup.
+  const own = [d.priceAskCents, d.pricePatientCents, d.priceQuickCents].find((v) => v != null);
+  return own != null ? own : askingCents(d);
 }
 
 // One paste for one marketplace: title, price, description, then tags where
