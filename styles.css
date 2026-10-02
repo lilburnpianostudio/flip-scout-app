@@ -156,6 +156,13 @@ select {
 .td-badge { background: var(--red); color: #fff; font-size: 12px; font-weight: 700; border-radius: 99px; padding: 2px 10px; }
 .li-down { text-decoration: line-through; color: #b5b2ac; }
 
+/* repricing advice (v28, FLIP-D34) */
+.reprice { border: 2px solid #b45309; background: #fffbeb; border-radius: 12px; padding: 12px 14px; margin: 10px 0 6px; font-size: 16px; }
+.reprice p { margin: 6px 0; }
+.reprice-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.reprice-btns .btn-small { min-height: 44px; }
+.rp-badge { background: #b45309; color: #fff; font-size: 12px; font-weight: 700; border-radius: 99px; padding: 2px 10px; white-space: nowrap; }
+
 /* offers, pending, status per marketplace (v27, FLIP-D33) */
 .offers { border: 2px solid #1e40af; background: #eff6ff; border-radius: 12px; padding: 12px 14px; margin: 10px 0 6px; }
 .offer-row { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 10px 0 4px; border-top: 1px solid #c7d7f5; margin-top: 8px; font-size: 16px; }

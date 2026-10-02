@@ -6,6 +6,7 @@
 import {
   isOpen, openOffers, bestOffer, addOffer, closeOffer, closeOffersOnSale, offerVerdict,
   setPending, isPending, platformStatus, STATUS_LABEL, attention,
+  DEFAULT_REPRICE, daysLive, livePrice, nextTierDown, repriceAdvice, applyReduce, markRefreshed, snoozeReprice,
 } from '../js/pipeline.js';
 
 let pass = 0;
@@ -135,6 +136,113 @@ is('a declined offer does not keep it in "offers waiting"',
   attention(item({ offers: [{ id: 'o1', platform: 'fbm', amountCents: 1, outcome: 'declined' }] })), 'live');
 is('scouted items are not in this pipeline', attention(item({ status: 'scouted' })), null);
 is('dead items are not in this pipeline', attention(item({ status: 'dead' })), null);
+
+// ---- repricing (v28, FLIP-D34) ---------------------------------------------
+// item() is listed on FB at $425 since 2026-09-20, with ask 425, fair 375,
+// quick 300, floor 260.
+const at = (iso) => new Date(iso + 'T12:00:00Z').getTime();
+
+is('the clock starts at the listing date', daysLive(item(), at('2026-10-04')), 14);
+is('nothing live: no clock', daysLive(item({ listings: [] }), at('2026-10-04')), null);
+is('a taken-down listing does not count', daysLive(item({ listings: [{ platform: 'fbm', listedAt: '2026-09-01', removedAt: '2026-09-10' }] }), at('2026-10-04')), null);
+is('with two listings, the older one sets the clock',
+  daysLive(item({ listings: [{ platform: 'fbm', listedAt: '2026-09-20' }, { platform: 'ebay', listedAt: '2026-09-30' }] }), at('2026-10-04')), 14);
+is('a listing with no date gives no clock rather than a wrong one', daysLive(item({ listings: [{ platform: 'fbm' }] }), at('2026-10-04')), null);
+
+is('the price buyers see is the lowest live one',
+  livePrice(item({ listings: [{ platform: 'fbm', priceCents: 42500 }, { platform: 'ebay', priceCents: 47500 }] })), 42500);
+is('no live price: null', livePrice(item({ listings: [] })), null);
+
+is('below the ask comes fair', nextTierDown(item(), 42500).label, 'Fair');
+is('below fair comes quick', nextTierDown(item(), 37500).label, 'Quick');
+is('below quick there is nothing: the floor is never a listing price', nextTierDown(item(), 30000), null);
+is('a price between tiers drops to the next one under it', nextTierDown(item(), 40000).cents, 37500);
+
+// -- when to say nothing
+is('13 days: too soon', repriceAdvice(item(), at('2026-10-03')), null);
+is('not listed: nothing to reprice', repriceAdvice(item({ status: 'acquired', listings: [] }), at('2026-12-01')), null);
+is('an open offer: answer that first',
+  repriceAdvice(item({ offers: [{ id: 'o1', platform: 'fbm', amountCents: 30000, outcome: 'open', at: '2026-09-21' }] }), at('2026-11-01')), null);
+is('a pending sale: leave it alone',
+  repriceAdvice(item({ listings: [{ platform: 'fbm', priceCents: 42500, listedAt: '2026-09-20', status: 'pending' }] }), at('2026-11-01')), null);
+is('an offer in the last two weeks is interest: leave the price',
+  repriceAdvice(item({ offers: [{ id: 'o1', platform: 'fbm', amountCents: 30000, outcome: 'declined', at: '2026-10-01T10:00:00Z' }] }), at('2026-10-10')), null);
+is('sold items get no advice', repriceAdvice(item({ status: 'sold' }), at('2026-12-01')), null);
+
+// -- reduce
+{
+  const a = repriceAdvice(item(), at('2026-10-04'));
+  is('14 days, no offers: drop a tier', [a.action, a.toCents, a.tierLabel, a.days], ['reduce', 37500, 'Fair', 14]);
+  is('in words he can act on', a.text, 'Up 14 days at $425 with no offers. Drop it to your fair price, $375.');
+}
+{
+  const a = repriceAdvice(item(), at('2026-10-25'));
+  is('past 30 days it also says to repost', a.text.endsWith('$375, and repost it so it shows as new.'), true);
+}
+{
+  const d = item({ listings: [{ platform: 'fbm', priceCents: 37500, listedAt: '2026-09-20' }] });
+  is('already at fair: next is quick', repriceAdvice(d, at('2026-10-04')).toCents, 30000);
+}
+
+// -- refresh, then revalue
+{
+  const d = item({ listings: [{ platform: 'fbm', priceCents: 30000, listedAt: '2026-09-20' }] });
+  is('at the lowest listed price, under 30 days: refresh it', repriceAdvice(d, at('2026-10-04')).action, 'refresh');
+  const a = repriceAdvice(d, at('2026-10-25'));
+  is('at the lowest listed price, past 30 days: the price is wrong', a.action, 'revalue');
+  is('and it never suggests listing at the floor', a.text.includes('$260'), false);
+}
+{
+  const d = item({ offers: [
+    { id: 'o1', platform: 'fbm', amountCents: 20000, outcome: 'declined', at: '2026-09-21' },
+    { id: 'o2', platform: 'fbm', amountCents: 22000, outcome: 'declined', at: '2026-09-22' },
+  ] });
+  const a = repriceAdvice(d, at('2026-09-25'));
+  is('two offers, both under the floor: revalue, however few days', a.action, 'revalue');
+  is('it names the best offer', a.text.includes('The best was $220.'), true);
+}
+{
+  const d = item({ offers: [
+    { id: 'o1', platform: 'fbm', amountCents: 20000, outcome: 'declined', at: '2026-09-21' },
+    { id: 'o2', platform: 'fbm', amountCents: 30000, outcome: 'declined', at: '2026-09-22' },
+  ] });
+  is('one offer above the floor: the floor is not the problem', repriceAdvice(d, at('2026-09-25')), null);
+}
+is('one low offer is one person, not the market',
+  repriceAdvice(item({ offers: [{ id: 'o1', platform: 'fbm', amountCents: 20000, outcome: 'declined', at: '2026-09-21' }] }), at('2026-09-25')), null);
+
+// -- the settings
+is('the days are configurable', repriceAdvice(item(), at('2026-09-27'), { staleDays: 7, refreshDays: 30 }).action, 'reduce');
+is('nonsense settings fall back to the defaults', repriceAdvice(item(), at('2026-10-04'), { staleDays: 'soon', refreshDays: -1 }).action, 'reduce');
+is('the defaults are 14 and 30', [DEFAULT_REPRICE.staleDays, DEFAULT_REPRICE.refreshDays], [14, 30]);
+
+// -- recording what he did
+{
+  const d = item({ listings: [{ platform: 'fbm', priceCents: 42500, listedAt: '2026-09-20' }, { platform: 'ebay', priceCents: 47500, listedAt: '2026-09-20' },
+    { platform: 'offerup', priceCents: 42500, listedAt: '2026-09-01', removedAt: '2026-09-10' }] });
+  applyReduce(d, 37500, '2026-10-04');
+  is('every live listing comes down by the same amount', d.listings.slice(0, 2).map((l) => l.priceCents), [37500, 42500]);
+  is('a taken-down listing is left alone', d.listings[2].priceCents, 42500);
+  is('the clock restarts', daysLive(d, at('2026-10-10')), 6);
+  is('so the advice is quiet until the new price has had its two weeks', repriceAdvice(d, at('2026-10-10')), null);
+  is('and comes back when it has', repriceAdvice(d, at('2026-10-18')).toCents, 30000);
+}
+{
+  const d = item();
+  applyReduce(d, 50000, '2026-10-04');
+  is('a "reduction" to a higher price is ignored', d.listings[0].priceCents, 42500);
+}
+{
+  const d = markRefreshed(item({ listings: [{ platform: 'fbm', priceCents: 30000, listedAt: '2026-09-20' }] }), '2026-10-04');
+  is('refreshing restarts the clock', daysLive(d, at('2026-10-10')), 6);
+}
+{
+  const d = snoozeReprice(item(), '2026-10-04');
+  is('"keep the price" quiets the advice', repriceAdvice(d, at('2026-10-10')), null);
+  is('for one stretch, not forever', repriceAdvice(d, at('2026-10-18')).action, 'reduce');
+  is('an old snooze does not hide a newer listing date',
+    daysLive(item({ repriceSnoozedAt: '2026-09-01' }), at('2026-10-04')), 14);
+}
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILED, ${pass} passed\n`);

@@ -50,6 +50,7 @@ import {
 import {
   openOffers, bestOffer, addOffer, closeOffer, closeOffersOnSale, offerVerdict,
   setPending, isPending, platformStatus, STATUS_LABEL, attention,
+  DEFAULT_REPRICE, repriceAdvice, applyReduce, markRefreshed, snoozeReprice,
 } from './pipeline.js';
 // The AI step, by copy and paste (v26). Pure, tested in tests/aicopy.test.mjs.
 import { buildPrompt, parseAnswer, applyAnswer } from './aicopy.js';
@@ -219,8 +220,14 @@ async function renderList() {
   // (v27). The old grouping was by status, which answered "where is it in the
   // lifecycle" when the question at the top of the day is "what do I do".
   const selling = bySt.acquired.concat(bySt.listed);
-  const byNeed = { offer: [], pending: [], ready: [], live: [], unlisted: [] };
-  selling.forEach((r) => { (byNeed[attention(r.data)] || byNeed.unlisted).push(r); });
+  const byNeed = { offer: [], pending: [], reprice: [], ready: [], live: [], unlisted: [] };
+  const now = Date.now();
+  selling.forEach((r) => {
+    const need = attention(r.data) || 'unlisted';
+    // Live and gone stale is its own group (v28): it needs a decision, where
+    // plain "live" only needs patience.
+    byNeed[need === 'live' && repriceAdvice(r.data, now, repriceCfg) ? 'reprice' : need].push(r);
+  });
   const days = (r) => daysIn(r.data.statusChangedAt || r.data.updatedAt || r.data.createdAt);
   const group = (label, list, badge) => {
     if (!list.length) return;
@@ -236,6 +243,13 @@ async function renderList() {
     return `<span class="of-badge" title="on ${esc(platformLabel(o.platform))}">${centsToDollars(o.amountCents).replace(/\.00$/, '')} offer</span>`;
   });
   group('🤝 Sale pending', byNeed.pending, (r) => `<span class="ir-days">${days(r)}d</span>`);
+  group('⏳ Needs repricing', byNeed.reprice, (r) => {
+    const a = repriceAdvice(r.data, now, repriceCfg);
+    // Short on purpose, like the offer badge: the name matters more than the
+    // day count, and the item itself says the rest.
+    const what = a.action === 'reduce' ? `↓ ${centsToDollars(a.toCents).replace(/\.00$/, '')}` : a.action === 'refresh' ? 'refresh' : 'recheck';
+    return `<span class="rp-badge" title="${a.days} days up">${what}</span>`;
+  });
   group('Ready to post', byNeed.ready, (r) => `<span class="ir-days">${days(r)}d</span>`);
   group('Live, waiting on a buyer', byNeed.live, (r) => {
     const n = (r.data.listings || []).filter((l) => !l.removedAt).length;
@@ -555,6 +569,7 @@ async function openDetail(id) {
   $('offerForm').hidden = true;
   renderTakedowns(d);
   renderOffers(d);
+  renderReprice(d);
   renderNet(d);
   renderPostedOn(d);
   renderShotlist(d);
@@ -688,12 +703,20 @@ async function generateCopy() {
 // The fee table lives in config/fees.json in the private repo, cached for
 // offline like the shot lists. The copy baked into fees.js is the fallback.
 let feeTable = DEFAULT_FEES;
+// How long before a quiet listing is called stale. Lives beside the fee table
+// in config/fees.json as { "reprice": { "staleDays": 14, "refreshDays": 30 } }.
+let repriceCfg = DEFAULT_REPRICE;
+
+function useFeeConfig(c) {
+  if (c && c.platforms) feeTable = mergeFees(c);
+  if (c && c.reprice) repriceCfg = { ...DEFAULT_REPRICE, ...c.reprice };
+}
 
 function loadFees() {
-  store.metaGet('fees').then((c) => { if (c) feeTable = mergeFees(c); });
+  store.metaGet('fees').then((c) => useFeeConfig(c));
   gh.readFile('config/fees.json').then((r) => {
-    if (r.ok && r.json && r.json.platforms) {
-      feeTable = mergeFees(r.json);
+    if (r.ok && r.json && (r.json.platforms || r.json.reprice)) {
+      useFeeConfig(r.json);
       store.metaSet('fees', r.json);
     }
   }).catch(() => {});
@@ -782,6 +805,42 @@ async function togglePending(id, platform) {
   toast(on ? `Sale pending on ${platformLabel(platform)}` : `Back to live on ${platformLabel(platform)}`);
   openDetail(id);
   renderList();
+}
+
+// ---------- repricing advice (v28, FLIP-D34) ----------
+// The app cannot change a price on a marketplace, and must not pretend to.
+// It says what to do, Ben does it there, and one tap here records that he did
+// so the clock restarts and the list stops asking.
+function renderReprice(d) {
+  const box = $('repriceBox');
+  const a = repriceAdvice(d, Date.now(), repriceCfg);
+  if (!a) { box.innerHTML = ''; return; }
+  const where = (d.listings || []).filter((l) => !l.removedAt).map((l) => platformLabel(l.platform));
+  const names = esc([...new Set(where)].join(', '));
+  const primary = a.action === 'reduce'
+    ? `<button type="button" class="btn btn-primary btn-small" data-rp="reduce">I dropped it to ${centsToDollars(a.toCents).replace(/\.00$/, '')}</button>`
+    : '<button type="button" class="btn btn-primary btn-small" data-rp="refresh">I refreshed it</button>';
+  box.innerHTML = `<div class="reprice"><b>⏳ ${a.action === 'reduce' ? 'Time to drop the price' : a.action === 'refresh' ? 'Time to refresh it' : 'Check what it is worth'}</b>
+    <p>${esc(a.text)}</p>
+    <p class="posted-hint">${a.action === 'reduce' ? `Change the price on ${names} first, then tap.` : `It is up on ${names}.`}</p>
+    <div class="reprice-btns">${primary}<button type="button" class="btn btn-ghost btn-small" data-rp="keep">Keep the price</button></div></div>`;
+  box.querySelectorAll('[data-rp]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      const r = await store.get('items', d.id);
+      if (!r) return;
+      const now = new Date().toISOString();
+      const today = now.slice(0, 10);
+      const what = b.dataset.rp;
+      if (what === 'reduce') applyReduce(r.data, a.toCents, today);
+      else if (what === 'refresh') markRefreshed(r.data, today);
+      else snoozeReprice(r.data, today);
+      r.data.updatedAt = now;
+      await outbox.enqueueRecord('items', d.id, r.data);
+      toast(what === 'reduce' ? `Recorded at ${centsToDollars(a.toCents)}` : what === 'refresh' ? 'Recorded: refreshed today' : 'Keeping the price. I will ask again in two weeks.');
+      openDetail(d.id);
+      renderList();
+    });
+  });
 }
 
 // ---------- offers (v27, FLIP-D33) ----------

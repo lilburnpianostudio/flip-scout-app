@@ -7,15 +7,20 @@
 
 import { boot, is, report, anItem, tick } from './harness.mjs';
 
+// Dates are relative on purpose. With fixed dates these listings would cross
+// the 14-day line a week after this file was written and move themselves into
+// "Needs repricing", failing a test about offers for a reason about time.
+const ago = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+
 const { window, $, store, click, openItem } = await boot([
   anItem({ id: 'k1', flipId: 'FLIP-0040', name: 'Kurzweil SP88X', status: 'listed', costCents: 9000,
     priceAskCents: 42500, pricePatientCents: 37500, priceQuickCents: 30000, priceFloorCents: 26000,
-    listings: [{ platform: 'fbm', priceCents: 42500, listedAt: '2026-09-20' }, { platform: 'ebay', priceCents: 47500, listedAt: '2026-09-21' }] }),
+    listings: [{ platform: 'fbm', priceCents: 42500, listedAt: ago(3) }, { platform: 'ebay', priceCents: 47500, listedAt: ago(2) }] }),
   anItem({ id: 'k2', flipId: 'FLIP-0041', name: 'Yamaha Keyboard', status: 'acquired',
     platformCopy: { fbm: { title: 'Yamaha keyboard', description: 'Works.' } } }),
   anItem({ id: 'k3', flipId: 'FLIP-0042', name: 'Fender Amp', status: 'acquired' }),
   anItem({ id: 'k4', flipId: 'FLIP-0043', name: 'Old Lamp', status: 'listed', category: 'furniture',
-    listings: [{ platform: 'craigslist', priceCents: 9000, listedAt: '2026-09-25' }] }),
+    listings: [{ platform: 'craigslist', priceCents: 9000, listedAt: ago(1) }] }),
 ]);
 
 const type = (id, v) => { $(id).value = v; $(id).dispatchEvent(new window.Event('input', { bubbles: true })); };
@@ -30,7 +35,7 @@ is('a live item says how many places it is up', $('itemRows').textContent.includ
 
 // ---- status under each marketplace ----------------------------------------
 await openItem('FLIP-0040');
-is('a live listing says live, and since when', subFor('fbm').textContent.startsWith('live since 2026-09-20'), true);
+is('a live listing says live, and since when', subFor('fbm').textContent.startsWith('live since ' + ago(3)), true);
 is('a live listing can be marked pending', !!subFor('fbm').querySelector('[data-pend="fbm"]'), true);
 is('a marketplace with nothing has no status line', $('postedOn').querySelector('[data-post="offerup"]').closest('.plat-row').nextElementSibling.classList.contains('plat-sub'), false);
 is('no offers yet: no offers box', $('offersBox').innerHTML, '');

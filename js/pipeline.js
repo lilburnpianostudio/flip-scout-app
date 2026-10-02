@@ -125,3 +125,115 @@ export function attention(d) {
   const written = Object.keys(d.platformCopy || {}).some((p) => copyFor(d, p));
   return written ? 'ready' : 'unlisted';
 }
+
+// ---------- repricing (v28, FLIP-D34) ----------
+// The list has always shown how many days an item has sat. Nothing acted on
+// it, so a listing could sit at its opening ask for two months. This says
+// what to do about it, and stays quiet when there is nothing to do.
+
+export const DEFAULT_REPRICE = { staleDays: 14, refreshDays: 30 };
+
+const DAY = 86400000;
+const dayOf = (iso) => (iso ? new Date(String(iso).slice(0, 10) + 'T00:00:00Z').getTime() : NaN);
+const daysBetween = (fromIso, now) => {
+  const t = dayOf(fromIso);
+  return Number.isFinite(t) ? Math.max(0, Math.floor((now - t) / DAY)) : null;
+};
+
+// How long the item has been up AT ITS CURRENT PRICE AND PHOTOS. The clock
+// starts at the oldest live listing and restarts when Ben reprices, refreshes,
+// or says "keep it", so advice he has already answered does not come back the
+// next morning.
+export function daysLive(d, now) {
+  const live = activeListings(d);
+  if (!live.length) return null;
+  const starts = live.map((l) => [l.listedAt, l.repricedAt, l.refreshedAt].filter(Boolean).sort().pop())
+    .filter(Boolean).sort();
+  if (!starts.length) return null;
+  let from = starts[0];
+  if (d.repriceSnoozedAt && d.repriceSnoozedAt > from) from = d.repriceSnoozedAt;
+  return daysBetween(from, now);
+}
+
+// The price buyers are looking at: the lowest live one. A padded eBay ask is
+// not the number a local buyer is passing on.
+export function livePrice(d) {
+  const ps = activeListings(d).map((l) => l.priceCents).filter((c) => c != null);
+  return ps.length ? Math.min(...ps) : null;
+}
+
+// The next rung down. The floor is never a listing price, so it is never a
+// target: reaching it means the valuation is wrong, not that the price should
+// be the floor.
+export function nextTierDown(d, fromCents) {
+  if (fromCents == null) return null;
+  return priceLadder(d).filter((t) => t.id !== 'floor' && t.cents < fromCents)
+    .sort((a, b) => b.cents - a.cents)[0] || null;
+}
+
+// repriceAdvice(d, now, cfg) -> null, or
+//   { action: 'reduce' | 'refresh' | 'revalue', days, text, toCents?, tierLabel? }
+// null means leave it alone: not up, an offer is open, a sale is pending,
+// someone offered recently, or it simply has not been long enough.
+export function repriceAdvice(d, now, cfg = DEFAULT_REPRICE) {
+  const stale = Number(cfg && cfg.staleDays) > 0 ? Number(cfg.staleDays) : DEFAULT_REPRICE.staleDays;
+  const refresh = Number(cfg && cfg.refreshDays) > 0 ? Number(cfg.refreshDays) : DEFAULT_REPRICE.refreshDays;
+  if (d.status !== 'acquired' && d.status !== 'listed') return null;
+  const live = activeListings(d);
+  if (!live.length || openOffers(d).length || live.some((l) => l.status === 'pending')) return null;
+  const days = daysLive(d, now);
+  if (days == null) return null;
+
+  // Offers are the market talking. Two or more, every one under the floor,
+  // says the floor is wrong, and no number of days makes that less true.
+  const floor = d.priceFloorCents;
+  const past = (d.offers || []).filter((o) => !isOpen(o) && o.outcome !== 'accepted');
+  if (floor != null && past.length >= 2 && past.every((o) => o.amountCents < floor)) {
+    const best = Math.max(...past.map((o) => o.amountCents));
+    return { action: 'revalue', days,
+      text: `${past.length} offers, every one under your floor (${money(floor)}). The best was ${money(best)}. The market may be telling you what it is worth: check sold prices again.` };
+  }
+
+  if (days < stale) return null;
+  // Any offer in the last stretch is interest. Leave the price alone.
+  const recent = (d.offers || []).some((o) => { const n = daysBetween(o.at, now); return n != null && n < stale; });
+  if (recent) return null;
+
+  const at = livePrice(d);
+  const next = nextTierDown(d, at);
+  if (next) {
+    return { action: 'reduce', days, toCents: next.cents, tierLabel: next.label,
+      text: `Up ${days} days at ${money(at)} with no offers. Drop it to your ${next.label.toLowerCase()} price, ${money(next.cents)}${days >= refresh ? ', and repost it so it shows as new' : ''}.` };
+  }
+  if (days >= refresh) {
+    return { action: 'revalue', days,
+      text: `Up ${days} days${at != null ? ' at ' + money(at) : ''}, already at your lowest listed price, with no offers. It is probably still priced too high: check sold prices again.` };
+  }
+  return { action: 'refresh', days,
+    text: `Up ${days} days${at != null ? ' at ' + money(at) : ''} with no offers, and already at your lowest listed price. Refresh it: a better first photo, then repost.` };
+}
+
+// Ben changed the price on the marketplaces; record it. Every live listing
+// comes down by the same amount, so a marketplace that was priced higher to
+// cover its fee stays higher by the same margin.
+export function applyReduce(d, toCents, today) {
+  const at = livePrice(d);
+  if (at == null || toCents == null || toCents >= at) return d;
+  const delta = at - toCents;
+  activeListings(d).forEach((l) => {
+    if (l.priceCents != null) l.priceCents = Math.max(0, l.priceCents - delta);
+    l.repricedAt = today;
+  });
+  return d;
+}
+
+export function markRefreshed(d, today) {
+  activeListings(d).forEach((l) => { l.refreshedAt = today; });
+  return d;
+}
+
+// "Keep the price": his call, and the advice goes quiet for a full stretch.
+export function snoozeReprice(d, today) {
+  d.repriceSnoozedAt = today;
+  return d;
+}
