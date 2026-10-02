@@ -29,13 +29,50 @@ export function isListedOn(d, platform) {
 }
 
 // What to ask. The newest live listing wins, because that is the number
-// buyers are actually looking at; then the patient price, then the quick one.
+// buyers are actually looking at; then the opening ask (v25), then the fair
+// price, then the quick one. Items from before v25 have no opening ask and
+// fall through to the fair price, which is what they always asked.
 export function askingCents(d) {
   const live = activeListings(d);
   if (live.length && live[live.length - 1].priceCents != null) return live[live.length - 1].priceCents;
+  if (d.priceAskCents != null) return d.priceAskCents;
   if (d.pricePatientCents != null) return d.pricePatientCents;
   if (d.priceQuickCents != null) return d.priceQuickCents;
   return null;
+}
+
+// The four prices on an item, highest to lowest (v25, FLIP-D31):
+//   ask    the opening price, with room to come down
+//   fair   what it should actually sell for (pricePatientCents since v1)
+//   quick  move it this week
+//   floor  the least Ben will take; never shown in a listing
+// Any of them may be blank. This is the one place that knows their order.
+export const PRICE_TIERS = [
+  ['ask', 'priceAskCents', 'Ask'],
+  ['fair', 'pricePatientCents', 'Fair'],
+  ['quick', 'priceQuickCents', 'Quick'],
+  ['floor', 'priceFloorCents', 'Floor'],
+];
+
+export function priceLadder(d) {
+  return PRICE_TIERS
+    .map(([id, field, label]) => ({ id, field, label, cents: d[field] }))
+    .filter((t) => t.cents != null);
+}
+
+// Prices that contradict each other. A floor above the asking price means
+// every offer the listing can attract is one Ben has already refused.
+export function ladderProblems(d) {
+  const l = priceLadder(d);
+  const out = [];
+  for (let i = 0; i < l.length - 1; i++) {
+    if (l[i].cents < l[i + 1].cents) out.push(`${l[i + 1].label} (${money(l[i + 1].cents)}) is higher than ${l[i].label} (${money(l[i].cents)})`);
+  }
+  const floor = d.priceFloorCents;
+  if (floor != null && d.costCents != null && d.costCents > 0 && floor < d.costCents) {
+    out.push(`Floor (${money(floor)}) is below what you paid (${money(d.costCents)})`);
+  }
+  return out;
 }
 
 // The Photos album name. Typed once when the album is made, found by scrolling

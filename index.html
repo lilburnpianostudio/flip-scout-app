@@ -98,9 +98,14 @@
           </div>
           <label class="field"><span>Where I got it</span><input type="text" id="itSource" placeholder="garage sale, Goodwill…"></label>
           <div class="tworow">
-            <label class="field"><span>Quick-sale price</span><input type="text" inputmode="decimal" id="itQuick" placeholder="$ move it this week"></label>
-            <label class="field"><span>Patient price</span><input type="text" inputmode="decimal" id="itPatient" placeholder="$ willing to wait"></label>
+            <label class="field"><span>Opening ask</span><input type="text" inputmode="decimal" id="itAsk" placeholder="$ room to come down"></label>
+            <label class="field"><span>Fair price</span><input type="text" inputmode="decimal" id="itPatient" placeholder="$ what it should sell for"></label>
           </div>
+          <div class="tworow">
+            <label class="field"><span>Quick-sale price</span><input type="text" inputmode="decimal" id="itQuick" placeholder="$ move it this week"></label>
+            <label class="field"><span>Lowest I'd take</span><input type="text" inputmode="decimal" id="itFloor" placeholder="$ private, never listed"></label>
+          </div>
+          <p class="err" id="priceWarn" hidden></p>
           <label class="field"><span>Photos album on your iPhone (leave blank for the FLIP number + name)</span>
             <input type="text" id="itAlbum" placeholder="FLIP-0006 Kurzweil SP88X">
           </label>
@@ -157,6 +162,7 @@
           <h2 id="detTitle" style="margin-top:8px;"></h2>
           <div id="takedownBox"></div>
           <div id="detRows"></div>
+          <div id="netBox"></div>
           <div class="det-actions" id="detActions"></div>
           <div id="postedOn"></div>
 
@@ -181,9 +187,12 @@
             <label class="field"><span>Sold for</span><input type="text" inputmode="decimal" id="saPrice" placeholder="$"></label>
             <div id="saTiers"></div>
             <div class="tworow">
-              <label class="field"><span>Fees/shipping</span><input type="text" inputmode="decimal" id="saFees" placeholder="$0"></label>
-              <label class="field"><span>Date sold</span><input type="date" id="saDate"></label>
+              <label class="field"><span>Marketplace fees</span><input type="text" inputmode="decimal" id="saFees" placeholder="$0"></label>
+              <label class="field"><span>Shipping I paid</span><input type="text" inputmode="decimal" id="saShip" placeholder="$0"></label>
             </div>
+            <p class="posted-hint" id="saFeeHint" hidden></p>
+            <label class="field"><span>Date sold</span><input type="date" id="saDate"></label>
+            <p class="sale-net" id="saNet" hidden></p>
             <div class="tworow">
               <button class="btn btn-buy" id="btnSaSave">Mark sold 💰</button>
               <button class="btn btn-ghost" id="btnSaCancel">Cancel</button>
@@ -248,7 +257,7 @@
     <ol class="help-list">
       <li>Already own it? Skip research entirely: <b>＋ New item</b>, type it in, done.</li>
       <li>Every item gets a FLIP number. A star (FLIP-0007*) just means the number locks in at next sync.</li>
-      <li>Set your two prices: <b>quick-sale</b> (move it this week) and <b>patient</b> (willing to wait).</li>
+      <li>Set your prices: <b>opening ask</b> (room to come down), <b>fair</b> (what it should sell for), <b>quick-sale</b> (move it this week) and the <b>lowest you'd take</b>, which stays private. The item then shows what you would actually keep on each marketplace after its fees.</li>
       <li>If the girls are in on the deal, add them under Partners: their name, agreed share %, and how much of the purchase price they put up. The item then shows what each person walks away with at each price, before you agree.</li>
       <li><b>How the money splits:</b> whoever put cash in gets it back first, then the profit is divided by the agreed shares. On a bad flip nobody owes you anything, but if she put money in she can get back less than she put in. That is real, and it is the point.</li>
     </ol>
@@ -257,7 +266,7 @@
     <ol class="help-list">
       <li>Post the item on FB or eBay yourself (copy helper is coming in the next update).</li>
       <li>On the item, tap <b>＋ Add listing</b>: pick the platform, tap a price tier, done.</li>
-      <li>When it sells: <b>💰 Sold…</b> with price, fees, date. Margin and partner payouts compute themselves.</li>
+      <li>When it sells: <b>💰 Sold…</b> with price, marketplace fees, what you paid to ship it, and the date. The form shows what you keep before you save, and margin and partner payouts compute themselves.</li>
       <li>Item didn't work out? <b>Mark dead</b>. It keeps its number and teaches the stats later.</li>
     </ol>
 

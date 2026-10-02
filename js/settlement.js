@@ -69,20 +69,26 @@ export function investedCapital(items) {
 
 // ---------- margin ----------
 
-// Margin is proceeds minus what the item cost. Unchanged since story 3.2.
+// Margin is proceeds minus what the item cost.
+//
+// v25 (FLIP-D31): what the seller paid to ship it is its own field,
+// sale.shippingCents, and comes out of proceeds exactly as a fee does. Before
+// v25 the form had one box labeled "Fees/shipping", so older sales carry both
+// in feesCents and no shippingCents at all; a missing field is $0, and those
+// records settle to the cent they always did.
 export function computeMargin(d) {
   if (!d || !d.sale || d.sale.priceCents == null) return null;
-  return d.sale.priceCents - (d.costCents || 0) - (d.sale.feesCents || 0);
+  return proceedsOf(d.sale) - (d.costCents || 0);
 }
 
 export function proceedsOf(sale) {
   if (!sale || sale.priceCents == null) return 0;
-  return sale.priceCents - (sale.feesCents || 0);
+  return sale.priceCents - (sale.feesCents || 0) - (sale.shippingCents || 0);
 }
 
 // ---------- settlement (FLIP-D19) ----------
 //
-//   proceeds = price - fees
+//   proceeds = price - fees - what the seller paid to ship it
 //   1. Return capital, pro-rata if proceeds fall short of cost
 //   2. margin = proceeds - cost
 //   3. If margin > 0, each partner also takes round(margin * share% / 100)

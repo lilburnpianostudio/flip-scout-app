@@ -5,6 +5,7 @@
 import {
   SELL_PLATFORMS, platformLabel, activeListings, isListedOn, askingCents,
   albumName, everythingText, closeSoldListing, pendingTakedowns, markTakenDown,
+  priceLadder, ladderProblems,
 } from '../js/listing.js';
 
 let pass = 0;
@@ -43,6 +44,9 @@ is('an unknown platform id still renders as itself', platformLabel('mercari'), '
 
 // ---- asking price ----------------------------------------------------------
 is('no listing: asks the patient price', askingCents(item()), 37500);
+is('an opening ask beats the fair price', askingCents(item({ priceAskCents: 42500 })), 42500);
+is('a live listing still beats the opening ask',
+  askingCents(item({ priceAskCents: 42500, listings: [{ platform: 'fbm', priceCents: 30000 }] })), 30000);
 is('no patient price: asks the quick price', askingCents(item({ pricePatientCents: null })), 25000);
 is('no prices at all: null, not $0', askingCents(item({ pricePatientCents: null, priceQuickCents: null })), null);
 is('newest LIVE listing wins over the tiers',
@@ -104,6 +108,24 @@ is('a DEAD item never owes a take-down',
   closeSoldListing(d, '2026-09-20');
   is('an already-removed listing keeps its original date', d.listings[0].removedAt, '2026-09-01');
 }
+
+// ---- the four prices (v25, FLIP-D31) ---------------------------------------
+{
+  const d = item({ priceAskCents: 42500, priceFloorCents: 20000, costCents: 9000 });
+  is('the ladder runs ask, fair, quick, floor', priceLadder(d).map((t) => t.id), ['ask', 'fair', 'quick', 'floor']);
+  is('a sensible ladder has no problems', ladderProblems(d), []);
+}
+is('blank tiers are left out, not shown as $0',
+  priceLadder(item({ priceQuickCents: null })).map((t) => t.id), ['fair']);
+is('an item from before v25 still has its two prices', priceLadder(item()).map((t) => t.label), ['Fair', 'Quick']);
+is('a floor above the ask is a problem',
+  ladderProblems({ priceAskCents: 10000, priceFloorCents: 12000 }), ['Floor ($120) is higher than Ask ($100)']);
+is('quick above fair is a problem',
+  ladderProblems({ pricePatientCents: 10000, priceQuickCents: 15000 }), ['Quick ($150) is higher than Fair ($100)']);
+is('a floor below cost is a problem',
+  ladderProblems({ priceAskCents: 10000, priceFloorCents: 4000, costCents: 5000 }), ['Floor ($40) is below what you paid ($50)']);
+is('a free item has no cost to fall below', ladderProblems({ priceFloorCents: 500, costCents: 0 }), []);
+is('equal tiers are fine', ladderProblems({ priceAskCents: 10000, pricePatientCents: 10000 }), []);
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILED, ${pass} passed\n`);

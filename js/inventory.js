@@ -43,7 +43,10 @@ export function previewAt(d, priceCents) {
 import {
   SELL_PLATFORMS, platformLabel, isListedOn, askingCents, albumName,
   everythingText, closeSoldListing, pendingTakedowns, markTakenDown,
+  priceLadder, ladderProblems,
 } from './listing.js';
+// What each marketplace keeps (v25). Pure, tested in tests/fees.test.mjs.
+import { DEFAULT_FEES, mergeFees, feeFor, expectedNet, feeClassOf } from './fees.js';
 
 // How the item came in (FLIP-D21). Only 'bought' cost money Ben chose to spend;
 // the other three are $0 by definition, which is what makes a $0 cost readable
@@ -78,8 +81,10 @@ function blankItem() {
     shotChecks: [],
     partners: [],
     payments: [],   // append-only settlement record (FLIP-D18)
+    priceAskCents: null,     // opening ask (v25)
     priceQuickCents: null,
-    pricePatientCents: null,
+    pricePatientCents: null, // the FAIR price; the field name predates the label
+    priceFloorCents: null,   // lowest acceptable, private (v25)
     notes: '',
     photoAlbum: '', // iPhone Photos album NAME only; blank = albumName() default
     createdAt: now,
@@ -265,8 +270,11 @@ function openForm(prefill) {
   $('itCost').value = d.costCents != null ? (d.costCents / 100) : '';
   syncCostToAcquisition();
   $('itAcquiredAt').value = d.acquiredAt || new Date().toISOString().slice(0, 10);
+  $('itAsk').value = d.priceAskCents != null ? (d.priceAskCents / 100) : '';
   $('itQuick').value = d.priceQuickCents != null ? (d.priceQuickCents / 100) : '';
   $('itPatient').value = d.pricePatientCents != null ? (d.pricePatientCents / 100) : '';
+  $('itFloor').value = d.priceFloorCents != null ? (d.priceFloorCents / 100) : '';
+  warnPrices();
   $('itDesc').value = d.description || '';
   $('itNotes').value = d.notes || '';
   $('itAlbum').value = d.photoAlbum || '';
@@ -287,6 +295,25 @@ function syncCostToAcquisition() {
   cost.placeholder = bought ? '$' : 'free';
   if (!bought) cost.value = '0';
   warnPartners();
+}
+
+// Prices that contradict each other get said out loud, not blocked: Ben may
+// know something the form does not.
+function formPrices() {
+  return {
+    priceAskCents: dollarsToCents($('itAsk').value),
+    pricePatientCents: dollarsToCents($('itPatient').value),
+    priceQuickCents: dollarsToCents($('itQuick').value),
+    priceFloorCents: dollarsToCents($('itFloor').value),
+    costCents: $('itAcquisition').value === 'bought' ? dollarsToCents($('itCost').value) : 0,
+  };
+}
+
+function warnPrices() {
+  const w = $('priceWarn');
+  const msgs = ladderProblems(formPrices());
+  w.hidden = !msgs.length;
+  w.innerHTML = msgs.map((m) => `Heads up: ${esc(m)}`).join('<br>');
 }
 
 function renderPartners() {
@@ -386,8 +413,10 @@ async function saveForm() {
   // Trust the field, not the disabled input: a non-bought item is $0, full stop.
   d.costCents = d.acquisition === 'bought' ? dollarsToCents($('itCost').value) : 0;
   d.acquiredAt = $('itAcquiredAt').value || d.acquiredAt;
+  d.priceAskCents = dollarsToCents($('itAsk').value);
   d.priceQuickCents = dollarsToCents($('itQuick').value);
   d.pricePatientCents = dollarsToCents($('itPatient').value);
+  d.priceFloorCents = dollarsToCents($('itFloor').value);
   d.description = $('itDesc').value.trim();
   d.notes = $('itNotes').value.trim();
   d.photoAlbum = $('itAlbum').value.trim();
@@ -440,8 +469,12 @@ async function openDetail(id) {
   if (!isBuy(d)) rows.push(['How I got it', esc(acquisitionLabel(d.acquisition))]);
   if (d.source) rows.push(['From', esc(d.source)]);
   rows.push(['Acquired', d.acquiredAt || '']);
-  if (d.priceQuickCents != null) rows.push(['Quick-sale price', centsToDollars(d.priceQuickCents)]);
-  if (d.pricePatientCents != null) rows.push(['Patient price', centsToDollars(d.pricePatientCents)]);
+  // One row for all four prices: they only mean something next to each other.
+  const ladder = priceLadder(d);
+  if (ladder.length) {
+    rows.push(['Prices', ladder.map((t) => `${t.label} <b>${centsToDollars(t.cents)}</b>`).join(' · ')
+      + (d.priceFloorCents != null ? '<br><small>the floor is private and never goes in a listing</small>' : '')]);
+  }
   if (d.partners && d.partners.length) {
     rows.push(['Partners', d.partners.map((p) => `${esc(p.name)} ${p.sharePct || 0}%${p.investedCents ? ' (' + centsToDollars(p.investedCents) + ' of the cost)' : ''}`).join('<br>')]);
     const mine = benInvested(d.costCents || 0, d.partners);
@@ -455,7 +488,7 @@ async function openDetail(id) {
   }
   if (d.status !== 'dead') rows.push(['Photos album', `${esc(albumName(d))}${d.photoAlbum ? '' : ' <small>(suggested)</small>'}`]);
   if (d.sale) {
-    rows.push(['Sold', `${platformLabel(d.sale.platform)} · ${centsToDollars(d.sale.priceCents)} · ${d.sale.soldAt || ''}${d.sale.feesCents ? ' · fees ' + centsToDollars(d.sale.feesCents) : ''}`]);
+    rows.push(['Sold', `${platformLabel(d.sale.platform)} · ${centsToDollars(d.sale.priceCents)} · ${d.sale.soldAt || ''}${d.sale.feesCents ? ' · fees ' + centsToDollars(d.sale.feesCents) : ''}${d.sale.shippingCents ? ' · shipping ' + centsToDollars(d.sale.shippingCents) : ''}`]);
     const m = frozenMargin(d);
     rows.push(['Margin', `<b class="${m >= 0 ? 'v-buy' : 'v-loss'}">${centsToDollars(m)}</b>`]);
     // Payouts of record, frozen at close (FLIP-D18). Capital return is shown
@@ -471,7 +504,7 @@ async function openDetail(id) {
   } else if (d.partners && d.partners.length && d.status !== 'dead') {
     // Negotiation table (FLIP-D10): what each partner walks away with at each
     // tier — the same settlement that will run at close, not a rosier version.
-    const tiers = [['quick', d.priceQuickCents], ['patient', d.pricePatientCents]].filter(([, c]) => c != null);
+    const tiers = priceLadder(d).filter((t) => t.id !== 'floor').map((t) => [t.label.toLowerCase(), t.cents]);
     tiers.forEach(([label, cents]) => {
       const pv = previewAt(d, cents);
       const lines = [`margin ${centsToDollars(pv.marginCents)}`]
@@ -487,6 +520,7 @@ async function openDetail(id) {
   $('saleForm').hidden = true;
   $('copySection').hidden = true;
   renderTakedowns(d);
+  renderNet(d);
   renderPostedOn(d);
   renderShotlist(d);
 
@@ -554,7 +588,8 @@ function copyFields(d) {
   out.name = d.name;
   out.seed = d.id;
   const tier = $('copyTier').value;
-  out.priceCents = tier === 'quick' ? d.priceQuickCents : tier === 'patient' ? d.pricePatientCents : dollarsToCents($('copyCustom').value);
+  const picked = priceLadder(d).find((t) => t.id === tier);
+  out.priceCents = picked ? picked.cents : dollarsToCents($('copyCustom').value);
   return out;
 }
 
@@ -567,11 +602,11 @@ function openCopySection(d) {
     `<label class="field"><span>${label}</span><input type="text" id="cf_${key}" value="${esc((d.copyFields || {})[key] || '')}"></label>`
   ).join('');
   const tierSel = $('copyTier');
-  tierSel.innerHTML = [
-    d.priceQuickCents != null ? `<option value="quick">Quick ${centsToDollars(d.priceQuickCents)}</option>` : '',
-    d.pricePatientCents != null ? `<option value="patient" selected>Patient ${centsToDollars(d.pricePatientCents)}</option>` : '',
-    '<option value="custom">Custom price…</option>',
-  ].join('');
+  // The floor is never offered: it must not end up in a listing by accident.
+  const shown = priceLadder(d).filter((t) => t.id !== 'floor');
+  tierSel.innerHTML = shown.map((t, i) =>
+    `<option value="${t.id}"${i === 0 ? ' selected' : ''}>${t.label} ${centsToDollars(t.cents)}</option>`).join('')
+    + '<option value="custom">Custom price…</option>';
   $('copyCustom').hidden = tierSel.value !== 'custom';
   $('copyOut').hidden = true;
   $('copyFallback').hidden = true;
@@ -608,6 +643,42 @@ async function generateCopy() {
     await outbox.enqueueRecord('items', detailId, rec.data);
     toast('Saved to the item ✓');
   };
+}
+
+// ---------- what you would keep (v25, FLIP-D31) ----------
+// The fee table lives in config/fees.json in the private repo, cached for
+// offline like the shot lists. The copy baked into fees.js is the fallback.
+let feeTable = DEFAULT_FEES;
+
+function loadFees() {
+  store.metaGet('fees').then((c) => { if (c) feeTable = mergeFees(c); });
+  gh.readFile('config/fees.json').then((r) => {
+    if (r.ok && r.json && r.json.platforms) {
+      feeTable = mergeFees(r.json);
+      store.metaSet('fees', r.json);
+    }
+  }).catch(() => {});
+}
+
+// One line per marketplace at the price Ben is asking: what the marketplace
+// takes and what is left after the item's own cost. A porch pickup and an eBay
+// sale at the same price are not the same money, and until v25 nothing said so.
+function renderNet(d) {
+  const box = $('netBox');
+  const selling = d.status === 'acquired' || d.status === 'listed';
+  const ask = askingCents(d);
+  if (!selling || ask == null) { box.innerHTML = ''; return; }
+  const feeClass = feeClassOf(d);
+  const lines = SELL_PLATFORMS.map(([id, label]) => {
+    const n = expectedNet(id, ask, { costCents: d.costCents, feeClass }, feeTable);
+    if (!n) return '';
+    const how = n.mode === 'local' ? 'pickup' : 'shipped';
+    const fee = n.feeCents ? `fee ${centsToDollars(n.feeCents)}` : 'no fee';
+    const profit = n.profitCents == null ? '' : ` · <b class="${n.profitCents >= 0 ? 'v-buy' : 'v-loss'}">${centsToDollars(n.profitCents)} profit</b>`;
+    return `<div class="net-row"><span>${esc(label)} <small>${how}</small></span><div>keep <b>${centsToDollars(n.netCents)}</b> <small>${fee}</small>${profit}</div></div>`;
+  }).join('');
+  box.innerHTML = `<div class="net-box"><p class="pipe-group">At ${centsToDollars(ask)}, you would keep</p>${lines}
+    <p class="posted-hint">Estimates. Shipped sales also cost postage. Fee rates checked ${esc(feeTable.checkedOn || '')}.</p></div>`;
 }
 
 // ---------- posted on: one tap per marketplace (v24, FLIP-D30) ----------
@@ -719,16 +790,20 @@ function renderShotlist(d) {
 }
 
 // ---------- listing entry (FR-004/FR-014: tier-tap price defaults) ----------
-function tierButtons(d, priceInputId) {
+// withFloor: a sale can close at the floor, but a LISTING must never be priced
+// at it, so the listing form leaves that button out.
+function tierButtons(d, priceInputId, withFloor = false) {
   const box = document.createElement('div');
   box.className = 'tier-row';
-  [['Quick', d.priceQuickCents], ['Patient', d.pricePatientCents]].forEach(([label, cents]) => {
-    if (cents == null) return;
+  priceLadder(d).filter((t) => withFloor || t.id !== 'floor').forEach(({ label, cents }) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'btn btn-ghost btn-small';
     b.textContent = `${label} ${centsToDollars(cents)}`;
-    b.addEventListener('click', () => { $(priceInputId).value = (cents / 100); });
+    b.addEventListener('click', () => {
+      $(priceInputId).value = (cents / 100);
+      $(priceInputId).dispatchEvent(new window.Event('input'));
+    });
     box.appendChild(b);
   });
   return box;
@@ -778,10 +853,51 @@ function openSaleForm(d) {
   $('saPlatform').innerHTML = SELL_PLATFORMS.map(([v, l]) => `<option value="${v}"${v === last ? ' selected' : ''}>${l}</option>`).join('');
   $('saPrice').value = '';
   $('saFees').value = '';
+  $('saShip').value = '';
   $('saDate').value = new Date().toISOString().slice(0, 10);
   const tb = $('saTiers');
   tb.innerHTML = '';
-  tb.appendChild(tierButtons(d, 'saPrice'));
+  tb.appendChild(tierButtons(d, 'saPrice', true));
+  saleItem = d;
+  renderSaleNet();
+}
+
+// The sale form says what Ben keeps BEFORE he saves, because the save freezes
+// the partner payouts and there is no undo (FLIP-D26).
+let saleItem = null;
+
+export function saleNumbers(d, priceCents, feesCents, shippingCents) {
+  const proceeds = priceCents - (feesCents || 0) - (shippingCents || 0);
+  return { proceedsCents: proceeds, profitCents: proceeds - (d.costCents || 0) };
+}
+
+function renderSaleNet() {
+  const d = saleItem;
+  const out = $('saNet');
+  const hint = $('saFeeHint');
+  if (!d) { out.hidden = true; hint.hidden = true; return; }
+  const price = dollarsToCents($('saPrice').value);
+  if (price == null) { out.hidden = true; hint.hidden = true; return; }
+  const fees = dollarsToCents($('saFees').value) || 0;
+  const ship = dollarsToCents($('saShip').value) || 0;
+  const n = saleNumbers(d, price, fees, ship);
+  out.hidden = false;
+  out.innerHTML = `You keep <b>${centsToDollars(n.proceedsCents)}</b> · profit <b class="${n.profitCents >= 0 ? 'v-buy' : 'v-loss'}">${centsToDollars(n.profitCents)}</b>`;
+
+  // Offer the fee the table expects when the box is still empty. Never typed
+  // in for him: a cash sale agreed through eBay messages has no fee at all.
+  const platform = $('saPlatform').value;
+  const est = feeFor(platform, price, { mode: 'shipped', feeClass: feeClassOf(d) }, feeTable);
+  if ($('saFees').value.trim() === '' && est) {
+    hint.hidden = false;
+    hint.innerHTML = `If it went through ${esc(platformLabel(platform))} checkout, the fee is about <button type="button" class="btn btn-ghost btn-small" id="btnUseFee">${centsToDollars(est)}, use it</button>`;
+    $('btnUseFee').addEventListener('click', () => {
+      $('saFees').value = (est / 100).toFixed(2);
+      renderSaleNet();
+    });
+  } else {
+    hint.hidden = true;
+  }
 }
 
 async function saveSale() {
@@ -795,6 +911,7 @@ async function saveSale() {
     priceCents,
     soldAt: $('saDate').value || now.slice(0, 10),
     feesCents: dollarsToCents($('saFees').value) || 0,
+    shippingCents: dollarsToCents($('saShip').value) || 0,
   };
   // FREEZE POINT (FLIP-D18). Settle now and write the numbers onto the sale.
   // Everything downstream reads these, so editing shares later cannot rewrite
@@ -984,6 +1101,9 @@ export function init() {
   $('btnNewItem').addEventListener('click', () => openForm(null));
   $('btnAddPartner').addEventListener('click', () => { formPartners.push({ name: '', sharePct: 0, investedCents: null }); renderPartners(); });
   $('itCost').addEventListener('input', warnPartners);
+  ['itAsk', 'itPatient', 'itQuick', 'itFloor', 'itCost'].forEach((id) => $(id).addEventListener('input', warnPrices));
+  acq.addEventListener('input', warnPrices);
+  ['saPrice', 'saFees', 'saShip', 'saPlatform'].forEach((id) => $(id).addEventListener('input', renderSaleNet));
   $('btnItemSave').addEventListener('click', saveForm);
   $('btnItemCancel').addEventListener('click', () => sub('invList'));
   $('btnLiSave').addEventListener('click', saveListing);
@@ -999,6 +1119,7 @@ export function init() {
   $('copyPlatform').addEventListener('input', () => { if (!$('copyOut').hidden) generateCopy(); });
   loadShotlists();
   loadPartners();
+  loadFees();
   $('btnDetBack').addEventListener('click', () => { sub('invList'); renderList(); });
   $('btnDetBackTop').addEventListener('click', () => { sub('invList'); renderList(); });
   $('btnDetEdit').addEventListener('click', async () => {

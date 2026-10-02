@@ -5,7 +5,7 @@
 // repo is public and real names live only in the private data repo.
 
 import {
-  settle, settleSale, freezeSale, frozenPayouts, needsFreeze,
+  settle, settleSale, freezeSale, frozenPayouts, frozenMargin, needsFreeze,
   computeMargin, computePartnerLedger, investedTotal, benInvested,
   isBuy, investedCapital,
   partnerItemLedger, buildPayout, formatReceipt,
@@ -132,6 +132,42 @@ const sold = (costCents, priceCents, partners, feesCents = 0) => ({
   const d = sold(2000, 10000, [{ name: 'Partner A', sharePct: 50, investedCents: 0 }], 1500);
   is('fees come off before margin', computeMargin(d), 6500);
   is('fees come off before the split', settleSale(d).payouts[0].payoutCents, 3250);
+}
+
+// ------------------------------------------------- shipping (v25, FLIP-D31)
+// What the seller paid to ship is money out, the same as a fee. It gets its
+// own field so profit can be read per platform, and a sale without the field
+// (every sale before v25) must settle exactly as it did.
+{
+  const d = sold(2000, 10000, [{ name: 'Partner A', sharePct: 50, investedCents: 0 }], 1500);
+  d.sale.shippingCents = 1000;
+  is('shipping comes off before margin', computeMargin(d), 5500);
+  is('shipping comes off before the split', settleSale(d).payouts[0].payoutCents, 2750);
+  is('Ben takes the rest of the proceeds', settleSale(d).benCents, 10000 - 1500 - 1000 - 2750);
+}
+{
+  const d = sold(2000, 10000, [{ name: 'Partner A', sharePct: 50, investedCents: 0 }], 1500);
+  is('a sale with no shipping field settles as it always did', computeMargin(d), 6500);
+  d.sale.shippingCents = 0;
+  is('a $0 shipping field changes nothing', computeMargin(d), 6500);
+}
+{
+  // Shipping can sink a flip. Capital still comes back pro-rata and nobody is
+  // asked to cover the loss.
+  const d = sold(3000, 4000, [{ name: 'Partner A', sharePct: 50, investedCents: 3000 }], 600);
+  d.sale.shippingCents = 1400;
+  const s = settleSale(d);
+  is('shipping turned it into a loss', s.marginCents, -1000);
+  is('partner gets back what the proceeds can cover', s.payouts[0].capitalCents, 2000);
+  is('no profit share on a loss', s.payouts[0].profitCents, 0);
+}
+{
+  const d = sold(800, 6000, [{ name: 'Partner A', sharePct: 50, investedCents: 0 }]);
+  d.sale.shippingCents = 1200;
+  freezeSale(d);
+  is('the freeze records the margin after shipping', d.sale.marginCents, 4000);
+  d.sale.shippingCents = 0;
+  is('and editing shipping afterwards cannot move a frozen margin', frozenMargin(d), 4000);
 }
 
 // --------------------------------------------------- the freeze point (D18)

@@ -35,6 +35,9 @@ jobs:
       - name: Listing fixtures (posted-on, take-down rule)
         run: node tests/listing.test.mjs
 
+      - name: Fee fixtures (what each marketplace keeps)
+        run: node tests/fees.test.mjs
+
       - name: Offline shell, version drift, and NFR-002 token scan
         run: node tests/shell-manifest.test.mjs
 
