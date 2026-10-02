@@ -43,8 +43,10 @@ export function previewAt(d, priceCents) {
 import {
   SELL_PLATFORMS, platformLabel, isListedOn, askingCents, albumName,
   everythingText, closeSoldListing, pendingTakedowns, markTakenDown,
-  priceLadder, ladderProblems,
+  priceLadder, ladderProblems, platformsFor, sellUrl, copyFor, askOn, platformText,
 } from './listing.js';
+// The AI step, by copy and paste (v26). Pure, tested in tests/aicopy.test.mjs.
+import { buildPrompt, parseAnswer, applyAnswer } from './aicopy.js';
 // What each marketplace keeps (v25). Pure, tested in tests/fees.test.mjs.
 import { DEFAULT_FEES, mergeFees, feeFor, expectedNet, feeClassOf } from './fees.js';
 
@@ -475,6 +477,13 @@ async function openDetail(id) {
     rows.push(['Prices', ladder.map((t) => `${t.label} <b>${centsToDollars(t.cents)}</b>`).join(' · ')
       + (d.priceFloorCents != null ? '<br><small>the floor is private and never goes in a listing</small>' : '')]);
   }
+  if (d.pricing && (d.pricing.rangeLowCents != null || d.pricing.basis)) {
+    const pr = d.pricing;
+    const range = pr.rangeLowCents != null && pr.rangeHighCents != null
+      ? `${centsToDollars(pr.rangeLowCents)} to ${centsToDollars(pr.rangeHighCents)}` : '';
+    const comps = (pr.comps || []).map((c) => `${esc(c.source)} ${centsToDollars(c.priceCents)}${c.note ? ' <small>' + esc(c.note) + '</small>' : ''}`).join('<br>');
+    rows.push(['Likely sells for', `${range ? '<b>' + range + '</b>' : ''}${pr.basis ? `<br><small>${esc(pr.basis)}</small>` : ''}${comps ? '<br>' + comps : '<br><small>no sold comps given: an estimate, not a fact</small>'}`]);
+  }
   if (d.partners && d.partners.length) {
     rows.push(['Partners', d.partners.map((p) => `${esc(p.name)} ${p.sharePct || 0}%${p.investedCents ? ' (' + centsToDollars(p.investedCents) + ' of the cost)' : ''}`).join('<br>')]);
     const mine = benInvested(d.costCents || 0, d.partners);
@@ -519,6 +528,7 @@ async function openDetail(id) {
   $('listingForm').hidden = true;
   $('saleForm').hidden = true;
   $('copySection').hidden = true;
+  $('aiSection').hidden = true;
   renderTakedowns(d);
   renderNet(d);
   renderPostedOn(d);
@@ -542,8 +552,9 @@ async function openDetail(id) {
   if (selling) addBtn('🖼️ Copy album name', 'btn-ghost', (e) => copyToClipboard(albumName(d), e.target));
   if (d.status === 'scouted') addBtn('Mark acquired', 'btn-primary', () => advanceStatus(d.id, 'acquired'));
   if (d.status === 'acquired' || d.status === 'listed') {
-    addBtn('📝 Listing copy', 'btn-primary', () => openCopySection(d));
-    addBtn('＋ Add listing', 'btn-primary', () => openListingForm(d));
+    addBtn('🤖 AI listings', 'btn-primary', () => openAiSection(d));
+    addBtn('📝 Listing copy', 'btn-ghost', () => openCopySection(d));
+    addBtn('＋ Add listing', 'btn-ghost', () => openListingForm(d));
   }
   // Sellable straight from `acquired` (FLIP-D25). The forward-only lifecycle
   // assumed acquired -> listed -> sold, but things sell off a listing that was
@@ -597,6 +608,8 @@ function openCopySection(d) {
   $('copySection').hidden = false;
   $('listingForm').hidden = true;
   $('saleForm').hidden = true;
+  $('aiSection').hidden = true;
+  $('copyPlatform').innerHTML = platformsFor(d).map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
   const set = FIELD_SETS[d.category] || FIELD_SETS.other;
   $('copyFieldRows').innerHTML = set.map(([key, label]) =>
     `<label class="field"><span>${label}</span><input type="text" id="cf_${key}" value="${esc((d.copyFields || {})[key] || '')}"></label>`
@@ -669,13 +682,16 @@ function renderNet(d) {
   const ask = askingCents(d);
   if (!selling || ask == null) { box.innerHTML = ''; return; }
   const feeClass = feeClassOf(d);
-  const lines = SELL_PLATFORMS.map(([id, label]) => {
-    const n = expectedNet(id, ask, { costCents: d.costCents, feeClass }, feeTable);
+  // Each marketplace at ITS price: an eBay ask written higher to cover the fee
+  // is the number that matters there, not the porch-pickup one.
+  const lines = platformsFor(d).map(([id, label]) => {
+    const n = expectedNet(id, askOn(d, id), { costCents: d.costCents, feeClass }, feeTable);
     if (!n) return '';
     const how = n.mode === 'local' ? 'pickup' : 'shipped';
     const fee = n.feeCents ? `fee ${centsToDollars(n.feeCents)}` : 'no fee';
     const profit = n.profitCents == null ? '' : ` · <b class="${n.profitCents >= 0 ? 'v-buy' : 'v-loss'}">${centsToDollars(n.profitCents)} profit</b>`;
-    return `<div class="net-row"><span>${esc(label)} <small>${how}</small></span><div>keep <b>${centsToDollars(n.netCents)}</b> <small>${fee}</small>${profit}</div></div>`;
+    const at = n.priceCents !== ask ? ` <small>at ${centsToDollars(n.priceCents)}</small>` : '';
+    return `<div class="net-row"><span>${esc(label)} <small>${how}</small></span><div>keep <b>${centsToDollars(n.netCents)}</b>${at} <small>${fee}</small>${profit}</div></div>`;
   }).join('');
   box.innerHTML = `<div class="net-box"><p class="pipe-group">At ${centsToDollars(ask)}, you would keep</p>${lines}
     <p class="posted-hint">Estimates. Shipped sales also cost postage. Fee rates checked ${esc(feeTable.checkedOn || '')}.</p></div>`;
@@ -690,13 +706,79 @@ function renderNet(d) {
 function renderPostedOn(d) {
   const box = $('postedOn');
   if (d.status !== 'acquired' && d.status !== 'listed') { box.innerHTML = ''; return; }
-  box.innerHTML = `<div class="posted-on"><p class="pipe-group">Posted on (tap when you post it)</p>
-    <div class="posted-chips">${SELL_PLATFORMS.map(([v, l]) =>
-      `<button type="button" class="posted-chip${isListedOn(d, v) ? ' on' : ''}" data-post="${v}">${isListedOn(d, v) ? '✓ ' : ''}${l}</button>`).join('')}</div>
-    <p class="posted-hint">Tap again to mark it taken down.</p></div>`;
+  // One row per marketplace that fits the item (v26): copy that marketplace's
+  // text, open its new-listing page, then tap its name once it is up. Three
+  // taps, and the third is the record.
+  box.innerHTML = `<div class="posted-on"><p class="pipe-group">Post it: copy, open, then tap the name once it is up</p>
+    ${platformsFor(d).map(([v, l]) => {
+      const on = isListedOn(d, v);
+      const ask = askOn(d, v);
+      const url = sellUrl(v);
+      return `<div class="plat-row">
+        <button type="button" class="posted-chip${on ? ' on' : ''}" data-post="${v}">${on ? '✓ ' : ''}${l}</button>
+        <span class="plat-ask">${ask != null ? centsToDollars(ask) : ''}${copyFor(d, v) ? ' <small title="written for this marketplace">✍️</small>' : ''}</span>
+        <button type="button" class="btn btn-ghost btn-small" data-pcopy="${v}">Copy</button>
+        ${url ? `<a class="btn btn-ghost btn-small" data-popen="${v}" href="${esc(url)}" target="_blank" rel="noopener">Open</a>` : ''}
+      </div>`;
+    }).join('')}
+    <p class="posted-hint">✍️ = written for that marketplace. Tap a name again to mark it taken down.</p>
+    <textarea id="postFallback" hidden rows="4"></textarea></div>`;
   box.querySelectorAll('[data-post]').forEach((b) => {
     b.addEventListener('click', () => togglePosted(d.id, b.dataset.post));
   });
+  box.querySelectorAll('[data-pcopy]').forEach((b) => {
+    b.addEventListener('click', (e) => copyToClipboard(platformText(d, b.dataset.pcopy), e.target, 'postFallback'));
+  });
+}
+
+// ---------- AI listings: carry the question out, bring the answer back (v26) ----------
+let aiItemId = null;
+
+function openAiSection(d) {
+  aiItemId = d.id;
+  $('aiSection').hidden = false;
+  $('copySection').hidden = true;
+  $('listingForm').hidden = true;
+  $('saleForm').hidden = true;
+  $('aiComps').value = '';
+  $('aiAnswer').value = '';
+  $('aiResult').innerHTML = '';
+  $('aiFallback').hidden = true;
+  // Only worth asking when there is something to replace.
+  $('aiReplaceRow').hidden = priceLadder(d).length === 0;
+  $('aiReplace').checked = false;
+}
+
+async function copyAiQuestion(e) {
+  const r = await store.get('items', aiItemId);
+  if (!r) return;
+  const ids = platformsFor(r.data).map(([v]) => v);
+  await copyToClipboard(buildPrompt(r.data, ids, $('aiComps').value.trim()), e.target, 'aiFallback');
+}
+
+async function applyAiAnswer() {
+  const r = await store.get('items', aiItemId);
+  if (!r) return;
+  const out = $('aiResult');
+  const text = $('aiAnswer').value;
+  if (!text.trim()) { out.innerHTML = '<p class="err">Paste the answer from Claude into the box first.</p>'; return; }
+  const ids = platformsFor(r.data).map(([v]) => v);
+  const parsed = parseAnswer(text, ids);
+  if (!parsed.ok) { out.innerHTML = `<p class="err">${esc(parsed.error)}</p>`; return; }
+  const now = new Date().toISOString();
+  applyAnswer(r.data, parsed, now, { replacePrices: $('aiReplace').checked });
+  r.data.updatedAt = now;
+  await outbox.enqueueRecord('items', aiItemId, r.data);
+  const done = Object.keys(parsed.platformCopy).map(platformLabel);
+  await openDetail(aiItemId);
+  renderList();
+  // openDetail closes every subform; put the result back where he is looking.
+  $('aiSection').hidden = false;
+  $('aiReplaceRow').hidden = priceLadder(r.data).length === 0;
+  $('aiAnswer').value = '';
+  $('aiResult').innerHTML = `<p class="ai-ok">✓ Written for ${esc(done.join(', ')) || 'no marketplaces'}. Scroll up to <b>Post it</b>.</p>`
+    + (parsed.notes.length ? `<ul class="ai-notes">${parsed.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : '');
+  toast(`Listings written for ${done.length} marketplace${done.length === 1 ? '' : 's'} ✓`);
 }
 
 async function togglePosted(id, platform) {
@@ -710,7 +792,7 @@ async function togglePosted(id, platform) {
     toast(`Down from ${platformLabel(platform)}`);
   } else {
     r.data.listings = r.data.listings || [];
-    r.data.listings.push({ platform, priceCents: askingCents(r.data), listedAt: today });
+    r.data.listings.push({ platform, priceCents: askOn(r.data, platform), listedAt: today });
     if (r.data.status === 'acquired') {
       r.data.status = 'listed';
       r.data.statusChangedAt = now;
@@ -754,6 +836,7 @@ const DEFAULT_SHOTS = {
   musical: ['Full front', 'Brand/model badge', 'Keys/strings up close', 'Powered on / in playing position', 'Included stand/pedal/case', 'Any flaws up close'],
   tools: ['Full tool', 'Model plate', 'Running (photo or short video)', 'Blades/bits/accessories', 'Any flaws up close'],
   furniture: ['Full front', 'Each side', 'Surface up close', 'Drawers/doors open', 'Tag/maker mark if any', 'Any flaws up close'],
+  clothing: ['Full front, laid flat or on a hanger', 'Full back', 'Brand and size tag', 'Fabric tag', 'Measurements with a tape', 'Any flaws up close'],
   other: ['Full front', 'Label/brand', 'Any flaws up close'],
 };
 let shotlists = DEFAULT_SHOTS;
@@ -771,7 +854,7 @@ function loadShotlists() {
 function renderShotlist(d) {
   const box = $('shotList');
   if (d.status === 'sold' || d.status === 'dead') { box.innerHTML = ''; return; }
-  const shots = shotlists[d.category] || shotlists.other;
+  const shots = shotlists[d.category] || DEFAULT_SHOTS[d.category] || shotlists.other;
   const checked = new Set(d.shotChecks || []);
   box.innerHTML = '<p class="pipe-group">Photo shot list</p>' + shots.map((s) =>
     `<label class="confirm-row shot-row"><input type="checkbox" data-shot="${esc(s)}"${checked.has(s) ? ' checked' : ''}><span>${esc(s)}</span></label>`
@@ -812,6 +895,7 @@ function tierButtons(d, priceInputId, withFloor = false) {
 function openListingForm(d) {
   $('listingForm').hidden = false;
   $('saleForm').hidden = true;
+  $('aiSection').hidden = true;
   $('liPlatform').innerHTML = SELL_PLATFORMS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
   $('liPrice').value = '';
   $('liDate').value = new Date().toISOString().slice(0, 10);
@@ -849,6 +933,7 @@ async function saveListing() {
 function openSaleForm(d) {
   $('saleForm').hidden = false;
   $('listingForm').hidden = true;
+  $('aiSection').hidden = true;
   const last = (d.listings && d.listings.length) ? d.listings[d.listings.length - 1].platform : 'fbm';
   $('saPlatform').innerHTML = SELL_PLATFORMS.map(([v, l]) => `<option value="${v}"${v === last ? ' selected' : ''}>${l}</option>`).join('');
   $('saPrice').value = '';
@@ -1115,6 +1200,9 @@ export function init() {
   $('btnSettleDone').addEventListener('click', () => { sub('invList'); renderList(); });
   $('btnGenerate').addEventListener('click', generateCopy);
   $('btnCopyClose').addEventListener('click', () => { $('copySection').hidden = true; });
+  $('btnAiCopy').addEventListener('click', copyAiQuestion);
+  $('btnAiApply').addEventListener('click', applyAiAnswer);
+  $('btnAiClose').addEventListener('click', () => { $('aiSection').hidden = true; });
   $('copyTier').addEventListener('input', () => { $('copyCustom').hidden = $('copyTier').value !== 'custom'; });
   $('copyPlatform').addEventListener('input', () => { if (!$('copyOut').hidden) generateCopy(); });
   loadShotlists();

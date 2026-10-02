@@ -5,7 +5,7 @@
 import {
   SELL_PLATFORMS, platformLabel, activeListings, isListedOn, askingCents,
   albumName, everythingText, closeSoldListing, pendingTakedowns, markTakenDown,
-  priceLadder, ladderProblems,
+  priceLadder, ladderProblems, platformsFor, sellUrl, copyFor, askOn, platformText,
 } from '../js/listing.js';
 
 let pass = 0;
@@ -24,8 +24,8 @@ const item = (over = {}) => ({
 });
 
 // ---- platforms -------------------------------------------------------------
-is('all four marketplaces Ben uses are offered',
-  SELL_PLATFORMS.map(([v]) => v), ['fbm', 'offerup', 'craigslist', 'ebay']);
+is('all six marketplaces are known',
+  SELL_PLATFORMS.map(([v]) => v), ['fbm', 'offerup', 'craigslist', 'ebay', 'vinted', 'depop']);
 is('Craigslist has a label', platformLabel('craigslist'), 'Craigslist');
 is('OfferUp no longer says "(existing)"', platformLabel('offerup'), 'OfferUp');
 is('an unknown platform id still renders as itself', platformLabel('mercari'), 'mercari');
@@ -126,6 +126,50 @@ is('a floor below cost is a problem',
   ladderProblems({ priceAskCents: 10000, priceFloorCents: 4000, costCents: 5000 }), ['Floor ($40) is below what you paid ($50)']);
 is('a free item has no cost to fall below', ladderProblems({ priceFloorCents: 500, costCents: 0 }), []);
 is('equal tiers are fine', ladderProblems({ priceAskCents: 10000, pricePatientCents: 10000 }), []);
+
+// ---- which marketplaces fit the item (v26, FLIP-D32) -----------------------
+const ids = (d) => platformsFor(d).map(([v]) => v);
+is('a keyboard is offered the four general marketplaces', ids(item({ category: 'musical' })), ['fbm', 'offerup', 'craigslist', 'ebay']);
+is('clothing is offered all six', ids(item({ category: 'clothing' })), ['fbm', 'offerup', 'craigslist', 'ebay', 'vinted', 'depop']);
+is('an item already listed on Vinted keeps Vinted, whatever its category',
+  ids(item({ category: 'other', listings: [{ platform: 'vinted', priceCents: 2000 }] })), ['fbm', 'offerup', 'craigslist', 'ebay', 'vinted']);
+is('an item with Depop copy written keeps Depop',
+  ids(item({ category: 'other', platformCopy: { depop: { description: 'x' } } })), ['fbm', 'offerup', 'craigslist', 'ebay', 'depop']);
+is('a taken-down Vinted listing still shows Vinted, so the history is reachable',
+  ids(item({ category: 'other', listings: [{ platform: 'vinted', removedAt: '2026-09-01' }] })).includes('vinted'), true);
+
+// ---- where to post ---------------------------------------------------------
+is('every marketplace has a page to open', SELL_PLATFORMS.every(([v]) => String(sellUrl(v)).startsWith('https://')), true);
+is('an unknown marketplace has none', sellUrl('mercari'), null);
+is('no city or ZIP is baked into the public repo',
+  /atlanta|[/.]atl[/.]|\d{5}/i.test(SELL_PLATFORMS.map(([v]) => sellUrl(v)).join(' ')), false);
+
+// ---- copy written per marketplace ------------------------------------------
+{
+  const d = item({
+    priceAskCents: 42500,
+    platformCopy: {
+      ebay: { title: 'Kurzweil SP88X Stage Piano', description: 'Tested.', tags: ['Brand: Kurzweil'], askCents: 47500 },
+      depop: { title: '', description: 'Vintage tee', tags: ['vintage', '90s'], askCents: null },
+      fbm: { title: '  ', description: '' },
+    },
+  });
+  is('copy that exists is found', copyFor(d, 'ebay').title, 'Kurzweil SP88X Stage Piano');
+  is('blank copy counts as no copy', copyFor(d, 'fbm'), null);
+  is('a marketplace with none has none', copyFor(d, 'offerup'), null);
+  is('a marketplace can carry its own asking price', askOn(d, 'ebay'), 47500);
+  is('without one it uses the asking price on the item', askOn(d, 'offerup'), 42500);
+  is('a live listing there beats both',
+    askOn({ ...d, listings: [{ platform: 'ebay', priceCents: 45000 }] }, 'ebay'), 45000);
+  is('a live listing somewhere ELSE does not set the price here',
+    askOn({ ...d, listings: [{ platform: 'fbm', priceCents: 39000 }] }, 'ebay'), 47500);
+  is('one paste: title, price, description, tags',
+    platformText(d, 'ebay'), ['Kurzweil SP88X Stage Piano', '$475', '', 'Tested.', '', 'Brand: Kurzweil'].join('\n'));
+  is('Depop has no title, and its tags are hashtags',
+    platformText(d, 'depop'), ['$425', '', 'Vintage tee', '', '#vintage #90s'].join('\n'));
+  is('no copy for that marketplace: falls back to the text on the item',
+    platformText(d, 'offerup'), everythingText(d));
+}
 
 if (fails.length) {
   console.error(`\n${fails.length} FAILED, ${pass} passed\n`);

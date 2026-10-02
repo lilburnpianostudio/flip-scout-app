@@ -199,10 +199,28 @@
             </div>
           </div>
 
+          <div id="aiSection" hidden class="subform">
+            <h3>AI listings</h3>
+            <p class="hint">Three steps. Flip Scout cannot call the AI itself, so you carry the question over and bring the answer back. One trip fills every marketplace and all four prices.</p>
+            <label class="field"><span>Sold prices you found (optional, makes the pricing better)</span>
+              <input type="text" id="aiComps" placeholder="eBay sold: $180, $210, $165">
+            </label>
+            <button class="btn btn-primary btn-block" id="btnAiCopy">1 · Copy the question</button>
+            <p class="posted-hint ai-step">2 · Open Claude, add this item's photos, paste, send. Then copy its whole answer.</p>
+            <label class="field"><span>3 · Paste the answer here</span>
+              <textarea id="aiAnswer" rows="5" placeholder="{ &quot;prices&quot;: … }"></textarea>
+            </label>
+            <label class="confirm-row" id="aiReplaceRow"><input type="checkbox" id="aiReplace"><span>Replace the prices I already typed</span></label>
+            <button class="btn btn-buy btn-block" id="btnAiApply">Fill in my listings</button>
+            <div id="aiResult"></div>
+            <textarea id="aiFallback" hidden rows="4"></textarea>
+            <button class="btn btn-ghost btn-block" id="btnAiClose" style="margin-top:8px;">Close</button>
+          </div>
+
           <div id="copySection" hidden class="subform">
             <h3>Listing copy</h3>
             <div class="tworow">
-              <label class="field"><span>For platform</span><select id="copyPlatform"><option value="fbm">FB Marketplace</option><option value="offerup">OfferUp</option><option value="craigslist">Craigslist</option><option value="ebay">eBay</option></select></label>
+              <label class="field"><span>For platform</span><select id="copyPlatform"></select></label>
               <label class="field"><span>Price to show</span><select id="copyTier"></select></label>
             </div>
             <input type="text" inputmode="decimal" id="copyCustom" placeholder="$ custom price" hidden style="margin-bottom:10px;">
@@ -264,8 +282,9 @@
 
     <h3 class="help-h">🛒 Listing and selling</h3>
     <ol class="help-list">
-      <li>Post the item on FB or eBay yourself (copy helper is coming in the next update).</li>
-      <li>On the item, tap <b>＋ Add listing</b>: pick the platform, tap a price tier, done.</li>
+      <li>On the item, tap <b>🤖 AI listings</b>. Copy the question, paste it into Claude with the photos, and paste the answer back. That one trip writes a title and description for every marketplace and suggests your four prices.</li>
+      <li>Under <b>Post it</b> there is one row per marketplace: <b>Copy</b> puts that marketplace's title, price and description on the clipboard, <b>Open</b> takes you to its new-listing page, and tapping the marketplace's name marks it posted.</li>
+      <li>Vinted and Depop only appear for clothing. Nothing is ever posted for you: every marketplace's rules forbid it, and it is your account on the line.</li>
       <li>When it sells: <b>💰 Sold…</b> with price, marketplace fees, what you paid to ship it, and the date. The form shows what you keep before you save, and margin and partner payouts compute themselves.</li>
       <li>Item didn't work out? <b>Mark dead</b>. It keeps its number and teaches the stats later.</li>
     </ol>

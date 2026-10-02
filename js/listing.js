@@ -12,7 +12,38 @@ export const SELL_PLATFORMS = [
   ['offerup', 'OfferUp'],
   ['craigslist', 'Craigslist'],
   ['ebay', 'eBay'],
+  ['vinted', 'Vinted'],
+  ['depop', 'Depop'],
 ];
+
+// Vinted and Depop are for clothing and accessories (v26, FLIP-D32). A table
+// saw does not belong on either, and two chips that are always wrong teach
+// Ben to ignore the row. So they are offered when the item is clothing, or
+// when the item already has a listing or copy there, and not otherwise.
+const CLOTHING_ONLY = ['vinted', 'depop'];
+
+export function platformsFor(d) {
+  const used = new Set([
+    ...(d.listings || []).map((l) => l.platform),
+    ...Object.keys(d.platformCopy || {}),
+  ]);
+  return SELL_PLATFORMS.filter(([id]) =>
+    !CLOTHING_ONLY.includes(id) || d.category === 'clothing' || used.has(id));
+}
+
+// Where each marketplace's "new listing" form lives. No API posts for an
+// individual seller on five of the six, and their terms forbid driving the
+// form, so the app copies the text and opens the page. No city, no ZIP: this
+// repo is public. Craigslist picks the nearest site on its own.
+const SELL_URLS = {
+  fbm: 'https://www.facebook.com/marketplace/create/item',
+  offerup: 'https://offerup.com/post',
+  craigslist: 'https://post.craigslist.org/',
+  ebay: 'https://www.ebay.com/sl/sell',
+  vinted: 'https://www.vinted.com/items/new',
+  depop: 'https://www.depop.com/products/create/',
+};
+export const sellUrl = (id) => SELL_URLS[id] || null;
 
 export const platformLabel = (id) => (SELL_PLATFORMS.find(([v]) => v === id) || [id, id])[1];
 
@@ -92,6 +123,38 @@ export function everythingText(d) {
   const c = askingCents(d);
   if (c != null) lines.push(money(c));
   if (d.description && d.description.trim()) lines.push('', d.description.trim());
+  return lines.join('\n').trim();
+}
+
+// The copy written for one marketplace (v26), or null. Blank copy is no copy.
+export function copyFor(d, platform) {
+  const c = d.platformCopy && d.platformCopy[platform];
+  if (!c || (!String(c.title || '').trim() && !String(c.description || '').trim())) return null;
+  return c;
+}
+
+// The price to list at on one marketplace: what is live there now, then the
+// price written for that marketplace, then the item's general asking price.
+export function askOn(d, platform) {
+  const live = activeListings(d).filter((l) => l.platform === platform);
+  if (live.length && live[live.length - 1].priceCents != null) return live[live.length - 1].priceCents;
+  const c = copyFor(d, platform);
+  if (c && c.askCents != null) return c.askCents;
+  return askingCents(d);
+}
+
+// One paste for one marketplace: title, price, description, then tags where
+// the marketplace uses them. Falls back to the item's own text, so the button
+// works on every item, written-for or not.
+export function platformText(d, platform) {
+  const c = copyFor(d, platform);
+  if (!c) return everythingText(d);
+  const lines = [];
+  if (c.title) lines.push(c.title);
+  const ask = askOn(d, platform);
+  if (ask != null) lines.push(money(ask));
+  if (c.description) lines.push('', c.description);
+  if (c.tags && c.tags.length) lines.push('', c.tags.map((t) => (platform === 'depop' ? '#' : '') + t).join(platform === 'depop' ? ' ' : ', '));
   return lines.join('\n').trim();
 }
 

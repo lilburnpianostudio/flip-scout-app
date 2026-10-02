@@ -22,6 +22,7 @@ export const CATEGORIES = [
   ['musical', 'Musical gear'],
   ['tools', 'Tools & outdoor'],
   ['furniture', 'Furniture & home'],
+  ['clothing', 'Clothing & accessories'],
   ['other', 'Other'],
 ];
 

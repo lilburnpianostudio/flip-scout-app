@@ -38,6 +38,9 @@ jobs:
       - name: Fee fixtures (what each marketplace keeps)
         run: node tests/fees.test.mjs
 
+      - name: AI-step fixtures (the prompt, and the door every answer comes through)
+        run: node tests/aicopy.test.mjs
+
       - name: Offline shell, version drift, and NFR-002 token scan
         run: node tests/shell-manifest.test.mjs
 

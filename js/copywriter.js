@@ -42,6 +42,11 @@ const OPENERS = {
     'Furniture refresh means this goes:',
     'Moving things around, so:',
   ],
+  clothing: [
+    'Closet cleanout:',
+    'Making room in the closet:',
+    'Up for grabs:',
+  ],
   other: [
     'Up for grabs:',
     'Clearing things out:',
@@ -67,6 +72,8 @@ function bodyParts(category, f) {
   if (f.condition) parts.push(`Overall condition is ${f.condition.trim()}.`);
   const wl = worksLine(category, f.worksStatus);
   if (wl) parts.push(wl);
+  if (f.size) parts.push(`Size ${f.size.trim()}.`);
+  if (f.material) parts.push(`Material: ${f.material.trim()}.`);
   if (f.dimensions) parts.push(`Measures ${f.dimensions.trim()}.`);
   if (f.accessories) parts.push(`Comes with ${f.accessories.trim()}.`);
   if (f.quirks) parts.push(`Being upfront: ${f.quirks.trim()}.`);
@@ -79,6 +86,8 @@ const CLOSERS = {
   ebay: 'Ships carefully packed. Check the photos, they are part of the description.',
   offerup: 'Cash or Venmo, local pickup. Happy to answer questions.',
   craigslist: 'Cash, local pickup. If the post is still up, it is still available.',
+  vinted: 'Ships quickly, carefully packed. Happy to answer questions.',
+  depop: 'Ships fast. Message me with any questions.',
 };
 
 // generate(category, platform, fields) → description string.
@@ -109,6 +118,7 @@ const CATEGORY_KEYWORDS = {
   musical: 'Tested Sounds Great',
   tools: 'Runs Strong',
   furniture: 'Solid Condition',
+  clothing: 'Great Condition',
   other: 'Good Condition',
 };
 
@@ -149,6 +159,10 @@ export const FIELD_SETS = {
   furniture: [
     ['brand', 'Brand/maker (if known)'], ['condition', 'Condition'], ['dimensions', 'Dimensions'],
     ['worksStatus', 'Sturdy? drawers/doors work?'], ['quirks', 'Flaws to disclose'],
+  ],
+  clothing: [
+    ['brand', 'Brand'], ['size', 'Size on the tag'], ['condition', 'Condition'],
+    ['material', 'Material'], ['dimensions', 'Measurements (pit to pit, length, inseam)'], ['quirks', 'Flaws to disclose'],
   ],
   other: [
     ['brand', 'Brand'], ['model', 'Model'], ['condition', 'Condition'], ['quirks', 'Flaws to disclose'],
